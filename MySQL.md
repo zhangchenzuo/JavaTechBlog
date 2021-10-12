@@ -38,6 +38,8 @@
   - [undo log(重做日志)](#undo-log重做日志)
     - [什么时候可以删除undo log？](#什么时候可以删除undo-log)
   - [更新流程中的两阶段提交](#更新流程中的两阶段提交)
+    - [为什么需要两阶段提交呢?](#为什么需要两阶段提交呢)
+    - [完整的落盘流程图](#完整的落盘流程图)
   - [了解组提交group commit么？](#了解组提交group-commit么)
 - [MySQL的主从复制](#mysql的主从复制)
   - [保证主从一致性](#保证主从一致性)
@@ -419,10 +421,22 @@ Innodb引擎为了在可重复读场景下解决这个幻读问题，引入了�
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/20210127112240956.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70)
 
 ### redo log与WAL
-redo log的背后其实是WAL（Write-ahead-log）。是一种**将磁盘的随机写改为顺序写**的操作。redo log落盘的时机一般有四个，首先是**每个事务commit**的时候，都会进行落盘。**当redo log的使用达到了redo log buffer size的一半**的时候也会进行落盘。其余的，系统每1s会后台执行一次持久化，以及数据库关闭时候也会落盘。   **在进行事务提交的时候，先将事务的所有日志文件写到重做日志文件进行持久化，然后事务提交。**
+redo log的背后其实是WAL（Write-ahead-log）。是一种**将磁盘的随机写改为顺序写**的操作。mysql每执行一条DML语句，会先把记录写入**redo log buffer**，后续某个时间点再一次性将多个操作记录写到redo log file。这种先写日志，再写磁盘的技术，就是WAL。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/2beb6ccd714746f18f457236955eb0c4.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBAemN6NTU2NjcxOQ==,size_20,color_FFFFFF,t_70,g_se,x_16)
+
+redo log落盘的时机一般有四个，首先是**每个事务commit**的时候，都会进行落盘。**当redo log的使用达到了redo log buffer size的一半**的时候也会进行落盘。其余的，系统每1s会后台执行一次持久化，以及数据库关闭时候也会落盘。   **在进行事务提交的时候，先将事务的所有日志文件写到重做日志文件进行持久化，然后事务提交。**
 
 ### WAL技术
 我们都知道，数据库的最大性能挑战就是磁盘的读写，许多先辈在提供数据存储性能上绞尽脑汁，提出和实验了一套又一套方法。其实所有方案最终总结出来就三种：「随机读写改顺序读写」、「缓冲单条读写改批量读写」、「单线程读写改并发读写」。WAL 其实也是这两种思路的一种实现，**一方面 WAL 中记录事务的更新内容，通过 WAL 将随机的脏页写入变成顺序的日志刷盘，另一方面，WAL 通过 buffer 的方式改单条磁盘刷入为缓冲批量刷盘，再者从 WAL 数据到最终数据的同步过程中可以采用并发同步的方式**。这样极大提升数据库写入性能，因此，WAL 的写入能力决定了数据库整体性能的上限，尤其是在高并发时。
+
+>redo log的写入方式
+
+在计算机操作系统中，用户空间(user space)下的缓冲区数据，一般是无法直接写入磁盘的，必须经过操作系统内核空间缓冲区(即OS Buffer)。
+
+- 日志最开始会写入位于存储引擎Innodb的redo log buffer，这个是在用户空间完成的。
+- 然后再将日志保存到操作系统内核空间的缓冲区(OS buffer)中。
+- 最后，通过系统调用fsync()，从OS buffer写入到磁盘上的redo log file中，完成写入操作。这个写入磁盘的操作，就叫做刷盘。
+
 
 ## binlog（归档日志）
 **binlog是Sever层持有的，是逻辑存储日志，是追加写入的。写满以后会切换到下一个，不会覆盖。可以用户恢复和主从复制。**其实也可以使用row变成二进制日志。如果是STATEMENT可以记录语句。但是核心区别在于**binlog记录的是一个事务的具体操作内容，逻辑日志。而redolog是每个page的更改的物理情况**
@@ -456,9 +470,18 @@ undo log与redo log不一样，undo log是逻辑日志，可以将数据库逻�
 图中浅色框表示是在InnoDB内部执行的，深色框表示是在执行器中执行的
 ![图中浅色框表示是在InnoDB内部执行的，深色框表示是在执行器中执行的](https://img-blog.csdnimg.cn/20210127112446577.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70)
 
+### 为什么需要两阶段提交呢?
 **两阶段提交保证了事务的一致性**。不论mysql什么时刻crash，最终是commit还是rollback完全取决于MySQL能不能判断出binlog和redolog在逻辑上是否达成了一致。只要逻辑上达成了一致就可以commit，否则只能rollback。也就是说我们就看是不是redo log和binlog一致了。
 
-* 为什么两阶段提交好，这个思想的本质是什么?
+
+如果不用两阶段提交的话，可能会出现这样情况：
+- bin log写入之前，机器crash导致需要重启。重启后redo log继续重放crash之前的操作，而当bin log后续需要作为**备份恢复时，会出现数据不一致的情况**。
+- 如果是bin log commit之前crash，那么重启后，发现redo log是prepare状态且bin log完整（bin log写入成功后，redo log会有bin log的标记），就会自动commit，让存储引擎提交事务。
+- 两阶段提交就是为了保证redo log和binlog数据的安全一致性。只有在这两个日志文件逻辑上高度一致了。你才能放心的使用redo log帮你将数据库中的状态恢复成crash之前的状态，使用binlog实现数据备份、恢复、以及主从复制。
+
+
+
+>为什么两阶段提交好，这个思想的本质是什么?
 **因为最大程度降低了网络危险期，本质是分布式理论中的XA事务（分布式事务）**
 
 1.准备阶段：事务协调者(事务管理器)给每个参与者(资源管理器)发送Prepare消息，每个参与者要么直接返回失败(如权限验证失败)，要么在本地执行事务，写本地的redo和undo日志，但不提交，到达一种“万事俱备，只欠东风”的状态。(关于每一个参与者在准备阶段具体做了什么目前我还没有参考到确切的资料，但是有一点非常确定：参与者在准备阶段完成了几乎所有正式提交的动作，有的材料上说是进行了“试探性的提交”，只保留了最后一步耗时非常短暂的正式提交操作给第二阶段执行。)
@@ -467,6 +490,8 @@ undo log与redo log不一样，undo log是逻辑日志，可以将数据库逻�
 
 将提交分成两阶段进行的目的很明确，就是*尽可能晚地提交事务，让事务在提交前尽可能地完成所有能完成的工作*，这样，最后的提交阶段将是一个耗时极短的微小操作，这种操作在一个分布式系统中失败的概率是非常小的，也就是所谓的“网络通讯危险期”非常的短暂，这是两阶段提交确保分布式事务原子性的关键所在。（唯一理论上两阶段提交出现问题的情况是当协调者发出提交指令后当机并出现磁盘故障等永久性错误，导致事务不可追踪和恢复）
 
+### 完整的落盘流程图
+![在这里插入图片描述](https://img-blog.csdnimg.cn/b620e41be7674babb75d5db044d68fb0.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBAemN6NTU2NjcxOQ==,size_20,color_FFFFFF,t_70,g_se,x_16)
 
 ## 了解组提交group commit么？
 
@@ -477,7 +502,7 @@ undo log与redo log不一样，undo log是逻辑日志，可以将数据库逻�
    其中步骤2比较慢，因此在可以在多个事务的步骤1完成以后，一次fsync降低写盘次数。
    对于采用binlog的数据库，采用这种思路
    - Flush阶段：将每个事务的二进制日志写入内存
-   - Sync阶段，将内存的二进制日志刷新到磁盘中，如果队列中有多个事务，一次刷盘就可以完成全部binlog写入。。
+   - Sync阶段，将内存的二进制日志刷新到磁盘中，如果队列中有多个事务，一次刷盘就可以完成全部binlog写入。
    - Commit阶段，leader根据顺序调用存储引擎层事务的提交。
    有一组事务在commit阶段的时候，其他新事务可以进行flush。
   
