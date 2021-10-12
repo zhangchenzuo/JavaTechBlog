@@ -357,7 +357,7 @@ public class DynamicDispatch {
 3. Queue
 
     LinkedList：可以用它来实现双向队列。
-
+    
     PriorityQueue：基于堆结构实现，可以用它来实现优先队列。
 
 4. Map
@@ -614,8 +614,8 @@ epoll既支持水平触发也支持边缘触发，默认是水平触发。
 1. 双重检验
  
 同步块内部再进行一次检查。并且需要对实例加上`volatile`
-	* 优点：线程安全，延迟加载，效率高
-	* 为什么使用`volatile`修饰实例，利用防止重排序，保证完整的新建实例；保证可见性（其实没必要，因为synchronize的已经解决了）。
+* 优点：线程安全，延迟加载，效率高
+* 为什么使用`volatile`修饰实例，利用防止重排序，保证完整的新建实例；保证可见性（其实没必要，因为synchronize的已经解决了）。
 
 ```java
 public class Singleton {
