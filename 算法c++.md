@@ -39,7 +39,6 @@
   - [背包问题](#背包问题)
     - [01背包](#01背包)
     - [完全背包](#完全背包)
-    - [完全背包求最小方案数量](#完全背包求最小方案数量)
     - [完全背包求方案数](#完全背包求方案数)
   - [重写排序](#重写排序)
   - [最大公约数](#最大公约数)
@@ -52,50 +51,58 @@
 其次是一类查找能满足xxx条件的最大/小值的问题，这类问题的特点在于**有单调性，并且容易验证可行性**。
 
 另外，就是**基于二分的最长上升子序列问题**。
-```java
+```c++
 // 最长上升子序列
 class Solution {
-    public int lengthOfLIS(int[] nums) {
-        int n = nums.length;
-        List<Integer> list = new ArrayList<>();
-        for (int i = 0;i<n;i++){
-            // 当列表为空，或者最后一个元素小于当前元素 直接添加到队列中
-            if (list.isEmpty() || list.get(list.size()-1)<nums[i]){
-                list.add(nums[i]);
-                continue;
-            }
-            // 二分法找到需要替换的位置，也就是大于nums[i]r的最小值 这个值我们可以换为nums[i]
-            int index = bs(list, nums[i]);
-            list.set(index, nums[i]);
-            
-        }
-        return list.size();
-    }
-    // 寻找到大于target的最小值，如果有等于的直接返回
-    public int bs(List<Integer> nums, int target){
-        int n = nums.size();
-        int l = 0;
-        int r = n-1;
-        while(l<=r){
-            int mid = (l+r)/2;
-            if (nums.get(mid) > target){
-                r = mid-1;
-            }else if (nums.get(mid)<target){
-                l = mid+1;
-            }else{
-                return mid;
-            }
-        }
-        return l;
-    }
-}
+public:
+    int lengthOfLIS(vector<int>& nums) {
+        // 为什么要做替换，看起来只有最后一个元素真正起到作用了？
+        // [0,8,4,12,2,3,4]为例子
+        // [0] -> [0,8] -> [0,4] -> [0,4,12] 
+        // 关键替换 [0,2,12] -> [0,2,3,4]
+        // 如果不替换后面的3，4都无法进来
+         int n = nums.size();
+         vector<int> list;
 
+        // 二分查找思考的点：1. 相等如何处理 2. 位于边界怎么处理
+        auto bs = [&](int target){
+            int n = list.size();
+            int l = 0, r = n-1;
+            // 抉择1. 要不要加等号
+            while(l<=r){
+                int mid = (r+l)/2;
+                if(list[mid] < target){
+                    l = mid+1;
+                }else if (list[mid] > target){
+                    r = mid-1;
+                }else{
+                    // 抉择2. 如果相等，如何处理。
+                    return mid;
+                }
+            }
+            // 抉择3. 返回l还是r (如果是大于target的最小值，就是l。小于target的最大值就是r)
+            return l;
+        };
+
+         for (int i = 0;i < n;i++){
+             int cur = nums[i];
+             if(list.empty() || list[list.size()-1] < cur){
+                 list.push_back(cur);
+                 continue;
+             }
+             // 二分查找 大于 cur的最小值
+             int index = bs(cur);
+             list[index] = cur;
+         }
+         return list.size();
+    }
+};
 ```
 ## 前缀和与差分
 前缀和的思路往往还是在代码中部分被使用。一般是通过预处理出来前缀和的方法，实现降低复杂度的目的。
-```java
-int n = nums.length;
-int[] presum = new int[n+1];
+```c++
+int n = nums.size();
+vector<int> presum(n+1, 0);
 for(int i = 0;i<n;i++){
     presum[i+1] = presum[i]+nums[i];
 }
@@ -541,89 +548,96 @@ for i in range(Q):
 
 ```
 ### 最小生成树（prim，Kruskal）
+https://leetcode.cn/problems/min-cost-to-connect-all-points/
 
 Prim算法是维护了一个dis数组，表示当前的树距离其余各个点的最小距离。每次把最小距离的那个点添加进来；O(n^2)，适用于稠密图
+```c++
+class Solution {
+public:
+    int minCostConnectPoints(vector<vector<int>>& points) {
+        // 最小生成树：只给了点，边的数量远大于点的数量，因此用prim算法
+        int n = points.size();
+        vector<vector<int>> g(n, vector<int>(n, 0));
+        for (int i = 0;i<n;i++){
+            int x1 = points[i][0]; 
+            int y1 = points[i][1]; 
+            for (int j = i+1;j<n;j++){
+               int x2 = points[j][0]; 
+               int y2 = points[j][1]; 
+               int dis = abs(x1-x2) + abs(y1-y2);
+               g[i][j] = g[j][i] = dis;
+            }            
+        }
 
-```python
-N, M = map(int, input().split())
 
-g = [[float('inf')]*(N+1) for _ in range(N+1)]
-for i in range(M):
-    a,b,c = map(int, input().split())
-    g[a][b] = g[b][a] = min(g[a][b], c)
-    
-def Prim():
-    res = 0
-    dis = [float('inf')]*(N+1)
-    has = [0]*(N+1)
-    for i in range(N):
-        t = -1
-        for j in range(1, N+1):
-            # 寻找到距离集合距离最短的边
-            if has[j] == 0 and (t == -1 or dis[t]>dis[j]):
-                t = j
-        # 选出来的最小值是无穷，说明有一条边是到不了的。
-        if i != 0 and dis[t] == float('inf'):
-            return 'impossible'
-        #  这里一定要注意，先累加，再更新，否则会错在自环上
-        if i != 0: # 第一次只是选点，树不需要添加边
-            res += dis[t]
-        # 更新每个点到集合的距离 
-        for j in range(1,N+1):
-            dis[j] = min(dis[j], g[t][j])
-        has[t] = 1
-    return res
-    
-res = Prim()
-print(res)
+        auto prim = [&](){
+            int ans = 0;
+            vector<int> dis(n, INT_MAX);
+            vector<bool> visited(n, false);
+            for(int i = 0;i<n;i++){
+                int cur = -1;
+                for (int j = 0;j<n;j++){
+                    // 找到未被访问过的最短的边
+                    if(!visited[j] && (cur == -1 || dis[cur]> dis[j])){
+                        cur = j;
+                    }
+                }
+                // 无解，无法成树
+                if (i != 0 && dis[cur] == INT_MAX) return -1;
+                // 这里一定要注意，先累加，再更新，否则会错在自环上
+                if (i != 0) ans += dis[cur];
+                // 更新每个点到集合的距离 
+                for(int j = 0;j<n;j++){
+                    dis[j] = min(dis[j], g[j][cur]);
+                }
+                visited[cur] = true;
+            }
+            return ans;
+        };
+
+        return prim();
+
+    }
+};
 ```
 
 kruskal算法使用了并查集，每次检查距离最小的两个点有没有连通，如果没有就连通，最后会成为一个树。O(mlogm)，是适用于稀疏图，首选。
 
-```python
-N,M = map(int, input().split())
-g = []
-for i in range(M):
-    a,b,c = map(int, input().split())
-    g.append([a,b,c])
+```c++ 
+class Solution {
+public:
+    int minCostConnectPoints(vector<vector<int>>& points) {
+        int n = points.size();
+        // 实测这样很慢，性能不如vector<struct>
+        vector<vector<int>> g;
+        for (int i = 0;i<n;i++){
+            int x1 = points[i][0], y1 = points[i][1]; 
+            for (int j = i+1;j<n;j++){
+               int x2 = points[j][0], y2 = points[j][1]; 
+               int dis = abs(x1-x2) + abs(y1-y2);
+               g.push_back({dis, i, j});
+            }            
+        }
 
-fa = {}
-def new(x):
-    if x in fa:
-        return 
-    fa[x] = x
-    
-def find(x):
-    if x == fa[x]:
-        return x
-    fa[x] = find(fa[x])
-    return fa[x]
-
-def union(a,b):
-    pa = fa[a]
-    pb = fa[b]
-    fa[pa] = pb
-    
-def Kruskal():
-    res = 0
-    g.sort(key = lambda x:x[2])
-    cnt = 0
-    for i in range(M):
-        a,b,c = g[i]
-        new(a)
-        new(b)
-        pa = find(a)
-        pb = find(b)
-        if pa != pb:
-            res += c
-            union(a,b)
-            cnt += 1
-    if cnt < N-1:
-        return 'impossible'
-    return res
+        sort(g.begin(), g.end(), [](vector<int> a, vector<int> b) -> int {return a[0] < b[0];});
+        UF uf(n);
         
-ans = Kruskal()
-print(ans)
+        auto kruskal = [&](){
+            int ans = 0;
+            int num = 0;
+            for(int i = 0;i<g.size() && num < n;i++){
+                if (uf.isUnion(g[i][2], g[i][1])) continue;
+                ans += g[i][0];
+                num++;
+                uf.unin(g[i][2],g[i][1]);
+            }
+            return ans;
+        };
+
+        return kruskal();
+
+    }
+};
 ```
 ### 二分图（染色，匈牙利算法）
 二分图的判断：**当且仅当图中不存在奇数环**。其余的都可以染色的方法实现二分。
@@ -895,40 +909,51 @@ class TrieNode {
 一般可以使用在查找连通性的问题上，包括最小生成树，具有传递性的一些连通等。
 
 最后上模板
-```java
+```c++
 class UF{
-    int[] fa;
-    int[] sz;
-    public UF(int n){
-        fa = new int[n];
-        for (int i = 0; i<n;i++)fa[i] = i;
-        sz = new int[n];
-        for (int i = 0; i<n; i++)sz[i] = 1;
+private:
+    vector<int> fa;
+    vector<int> sz;
+    int num = 0;
+public:
+    UF(int n){
+        num = n;
+        for(int i =0;i<n;i++){
+            fa.push_back(i);
+            sz.push_back(1);
+        }
     }
 
-    public int find(int x){
-        if(fa[x] == x)return fa[x];
+    int find(int x){
+        if (fa[x] == x){
+            return x;
+        }
         fa[x] = find(fa[x]);
         return fa[x];
     }
 
-    public boolean isUnion(int i, int j){
-        return find(i) == find(j);
+    bool isUnion(int x, int y){
+        return find(x) == find(y);
     }
 
-    public void union(int x, int y){
+    void unin(int x, int y){
         int xfa = find(x);
         int yfa = find(y);
-        if (xfa == yfa) return;
-        if(sz[xfa]>=sz[yfa]){
-            sz[xfa] += sz[yfa];
-            fa[yfa] = xfa;
-        }else{
-            sz[yfa] += sz[xfa];
+        if (xfa==yfa) return;
+        num--;
+        if(sz[xfa] < sz[yfa]){
             fa[xfa] = yfa;
+            sz[yfa] += sz[xfa];
+        }else{
+            fa[yfa] = xfa;
+            sz[xfa] += sz[yfa];
         }
     }
-}
+
+    int count() const{
+        return num;
+    }
+};
 
 ```
 
@@ -1274,7 +1299,7 @@ class Reader {
 
 另外会有类似的，分组背包->其实就是多重背包，二维背包->其实就是额外多了一个可以倒序遍历的维度。
 
-在进一步是求解背包的方案数问题，最简单的方案数问题，与权值无关。**求最优方案的方案数**我们需要额外的维护dp数组和方案数数组，我们需要知道当前的最优方案是如何转换得到的，并且进行加和得到最优解的方案数。
+在进一步是求解背包的方案数问题，最简单的方案数问题，与权值无关。**求醉最优方案的方案数**我们需要额外的维护dp数组和方案数数组，我们需要知道当前的最优方案是如何转换得到的，并且进行加和得到最优解的方案数。
 
 有依赖的树型背包问题，需要使用dfs，首先完善出来子树的dp情况，在计算根节点的最优。自下而上的01背背包。
 
@@ -1331,8 +1356,6 @@ public class Main{
     }
 }
 ```
-### 完全背包求最小方案数量
-
 ### 完全背包求方案数
 ```java
 
