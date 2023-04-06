@@ -41,6 +41,7 @@
     - [完全背包](#完全背包)
     - [完全背包求 最值 方案](#完全背包求-最值-方案)
     - [01背包求方案数](#01背包求方案数)
+    - [多重背包问题](#多重背包问题)
   - [重写排序](#重写排序)
   - [最大公约数](#最大公约数)
 - [C++ 头文件](#c-头文件)
@@ -1444,6 +1445,55 @@ int main() {
  return 0;    
 }
 ```
+### 多重背包问题
+第 i 种物品最多有 si 件，每件体积是 vi，价值是 wi。
+方法其实就是把s件那个物品，重复多次；对于无限次使用的，最多也只有V/vi。退化成01背包。
+
+枚举的时候可以采用二进制的思路。 复杂度 $O(nlog(s))$
+
+更进一步可以用单调队列优化复杂度更低 https://www.acwing.com/solution/content/53507/
+```c++
+#include<iostream>
+using namespace std;
+
+const int N = 12010, M = 2010;
+int n, m;
+int v[N], w[N]; 
+int f[M];
+
+int main()
+{
+    cin >> n >> m;
+    int cnt = 0; 
+    for(int i = 1;i <= n;i ++){
+        int a,b,s;
+        cin >> a >> b >> s; // 体积，价值，个数
+        int k = 1; 
+        if(s<0)s=1; // 表示 只能用1此
+        else if(s==0)s=m/a; // 随便用，最多也 m/a
+        
+        while(k<=s){
+            cnt ++ ; //组别先增加
+            w[cnt] = a * k ; 
+            v[cnt] = b * k; 
+            s -= k; k *= 2;
+        }
+        //剩余的一组
+        if(s>0){
+            cnt ++ ;
+            w[cnt] = a*s; 
+            v[cnt] = b*s;
+        }
+    }
+    //01背包
+    for(int i = 1;i <= cnt ;i ++)
+        for(int j = m ;j >= w[i];j --)
+            f[j] = max(f[j],f[j-w[i]] + v[i]);
+    cout << f[m] << endl;
+    return 0;
+}
+
+```
 
 ## 重写排序
 ```java
@@ -1467,6 +1517,9 @@ Collections.sort(list, (a, b)->{
 public int gcd(int x, int y) {
     return x == 0 ? y : gcd(y % x, x);
 }
+```
+```c++
+int x = gcd(a, b);
 ```
 # C++ 头文件
 https://www.acwing.com/blog/content/17174/
