@@ -40,7 +40,7 @@
     - [01背包](#01背包)
     - [完全背包](#完全背包)
     - [完全背包求 最值 方案](#完全背包求-最值-方案)
-    - [完全背包求方案数](#完全背包求方案数)
+    - [01背包求方案数](#01背包求方案数)
   - [重写排序](#重写排序)
   - [最大公约数](#最大公约数)
 - [C++ 头文件](#c-头文件)
@@ -1313,7 +1313,7 @@ class Reader {
 3、组合问题：dp[i]+=dp[i-num];
 
 ### 01背包
-`dp[i][j] = max(dp[i-1][j], dp[i][j-w[i]]+v[i])`
+`dp[i][j] = max(dp[i-1][j], dp[i-1][j-w[i]]+v[i])`
 ```c++
 #include<bits/stdc++.h>
 using namespace std;
@@ -1336,29 +1336,25 @@ int main() {
 ```
 ### 完全背包
 
-**核心：状态压缩——外循环是正向，内循循环正序序v[i]~m**  `dp[i][j] = max(dp[i-1][j], dp[i][j-w[i]]+v[i])`
-```java
-import java.util.*;
-public class Main{
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        int n = sc.nextInt();
-        int m = sc.nextInt();
-        int[] v = new int[n];
-        int[] w = new int[n];
-        for(int i = 0;i<n;i++){
-            v[i] = sc.nextInt();
-            w[i] = sc.nextInt();
-        }
-        
-        int[] dp = new int[m+1];
-        for (int i = 1; i<=n;i++){
-            for(int j = v[i-1];j<=m; j++){
-                dp[j] = Math.max(dp[j], dp[j-v[i-1]]+w[i-1]);
-            }
-        }
-        System.out.print(dp[m]);
-    }
+**核心：状态压缩——外循环是正向，内循循环正序序v[i]~m**  `dp[i][j] = max(dp[i][j], dp[i][j-w[i]]+v[i])`
+```c++
+#include<bits/stdc++.h>
+using namespace std;
+
+const int N = 1010;
+
+int n, m;
+int value[N], weight[N];
+int dp[N];
+
+int main() {
+    cin >> n >> m;
+    for(int i = 0; i < n; i++) cin >> weight[i]  >> value[i] ;
+    for(int i = 0; i < n; i++) 
+        for(int j = weight[i]; j <= m; j++) 
+            dp[j] = max(dp[j], dp[j-weight[i]]+value[i]);
+    cout << dp[m] << endl;
+ return 0;    
 }
 ```
 
@@ -1385,51 +1381,67 @@ public:
 };
 ```
 
+### 01背包求方案数
+注意在定义转移矩阵的时候，**恰好**和**小于等于**的区别。
+```c++
+#include<bits/stdc++.h>
+using namespace std;
 
-### 完全背包求方案数
-```java
+const int N = 1010;
 
-import java.util.*;
-public class Main{
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        int n = sc.nextInt();
-        int m = sc.nextInt();
-        int[] v = new int[n];
-        int[] w = new int[n];
-        for(int i = 0; i<n;i++){
-            v[i] = sc.nextInt();
-            w[i] = sc.nextInt();
+int n, m;
+int value[N], weight[N];
+int dp[N];
+int mod = 1e9+7;
+long long path[N];
+// 方法1：容积恰好为 i 时的最佳解的方案个数
+int main() {
+    cin >> n >> m;
+    for(int i = 0; i < n; i++) cin >> weight[i]  >> value[i];
+    path[0] = 1; // 容积恰好为 0 的最佳解的方案个数
+    for(int i = 0; i < n; i++) {
+        for(int j = m; j >= weight[i]; j--) {
+            long long cur = dp[j-weight[i]]+value[i];
+            // 新的方案更好
+            if(cur > dp[j]){
+                dp[j] = cur%mod;
+                path[j] = path[j-weight[i]];
+            }else if(dp[j] == cur){ // 新的方案和之前的一样好,两种方案
+                path[j] = (path[j-weight[i]] + path[j])%mod;
+            }  
         }
-        int mod = 1000000007;
-        long[] g = new long[m+1];
-        g[0] = 1;
-        long[] dp = new long[m+1];
-        for (int i = 0; i<n;i++){
-            for (int j = m;j>=v[i];j--){
-                long t = 0;
-                long s = 0;
-                t = Math.max(dp[j], dp[j-v[i]]+w[i]);
-                if (t == dp[j]){
-                    s += g[j];
-                }
-                // 注意这里不能是else，否则会忽略相等的情况
-                if(t ==  dp[j-v[i]]+w[i]){
-                    s += g[j-v[i]];
-                }
-                g[j] = s%mod;
-                dp[j] = t;
-            }
-        }
-        long ans = 0;
-        long max = dp[m];
-        for(int i = 0; i<=m;i++){
-            if (dp[i] == max){
-                ans += g[i];
-            }
-        }
-        System.out.print(ans);
     }
+    int max_ans = dp[m];
+    // 此时的path[i]: 在n个物品下，容积恰好i时，最佳方案的方案数。
+    int ans = 0;
+    for(int i = 0;i<=m;i++){
+        // 因为可能容积 x~m 内的，得到的最佳结果时一样的，这些方案都需要累加。
+        if(dp[i] == max_ans) ans = (ans+path[i])%mod;
+    }
+    cout << ans << endl;
+ return 0;    
+}
+
+
+// 方案二： path[i]定义为容量最大为i时的最优解的方案数
+int main() {
+    cin >> n >> m;
+    for(int i = 0; i < n; i++) cin >> weight[i]  >> value[i];
+    // !!! 注意！！！ 这里是两种方法唯一的区别。对于恰好，只有dp[0]=1，对于最大，dp[i]=1；
+    for(int i = 0; i <= m; i ++)  path[i] = 1;
+    for(int i = 0; i < n; i++) {
+        for(int j = m; j >= weight[i]; j--) {
+            long long cur = dp[j-weight[i]]+value[i];
+            if(cur > dp[j]){
+                dp[j] = cur%mod;
+                path[j] = path[j-weight[i]];
+            }else if(dp[j] == cur){
+                path[j] = (path[j-weight[i]] + path[j])%mod;
+            }  
+        }
+    }
+    cout << path[m] << endl;
+ return 0;    
 }
 ```
 
