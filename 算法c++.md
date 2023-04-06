@@ -42,6 +42,7 @@
     - [完全背包求 最值 方案](#完全背包求-最值-方案)
     - [01背包求方案数](#01背包求方案数)
     - [多重背包问题](#多重背包问题)
+    - [容积、重量双限制](#容积重量双限制)
   - [重写排序](#重写排序)
   - [最大公约数](#最大公约数)
 - [C++ 头文件](#c-头文件)
@@ -1453,14 +1454,6 @@ int main() {
 
 更进一步可以用单调队列优化复杂度更低 https://www.acwing.com/solution/content/53507/
 ```c++
-#include<iostream>
-using namespace std;
-
-const int N = 12010, M = 2010;
-int n, m;
-int v[N], w[N]; 
-int f[M];
-
 int main()
 {
     cin >> n >> m;
@@ -1471,7 +1464,7 @@ int main()
         int k = 1; 
         if(s<0)s=1; // 表示 只能用1此
         else if(s==0)s=m/a; // 随便用，最多也 m/a
-        
+
         while(k<=s){
             cnt ++ ; //组别先增加
             w[cnt] = a * k ; 
@@ -1492,8 +1485,24 @@ int main()
     cout << f[m] << endl;
     return 0;
 }
+```
+### 容积、重量双限制
+```c++
+int main () {
+    cin >> n >> V >> M;
+    for (int i = 1; i <= n; i ++) {
+        cin >> v[i] >> m[i] >> w[i];//体积，重量，价值
+    }
+    for (int i = 1; i <= n; i ++)
+        for (int j = V; j >= v[i]; j --)
+            for (int k = M; k >= m[i]; k --)
+                f[j][k] = max (f[j - v[i]][k - m[i]] + w[i], f[j][k]); //01 背包
+    cout << f[V][M] << endl;
+    return 0;
+} 
 
 ```
+
 
 ## 重写排序
 ```java
