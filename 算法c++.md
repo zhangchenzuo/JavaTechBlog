@@ -39,9 +39,11 @@
   - [背包问题](#背包问题)
     - [01背包](#01背包)
     - [完全背包](#完全背包)
+    - [完全背包求 最值 方案](#完全背包求-最值-方案)
     - [完全背包求方案数](#完全背包求方案数)
   - [重写排序](#重写排序)
   - [最大公约数](#最大公约数)
+- [C++ 头文件](#c-头文件)
 # 算法思想
 ## 二分
 二分思想比较场景，模板就不写了。分析一下二分的场景。
@@ -1304,34 +1306,37 @@ class Reader {
 有依赖的树型背包问题，需要使用dfs，首先完善出来子树的dp情况，在计算根节点的最优。自下而上的01背背包。
 
 **核心：状态压缩——外循环是正向，内循环是倒序m~v[i]**
+
+状态转移方程：
+1、最值问题: dp[i] = max/min(dp[i], dp[i-nums]+1) 或 dp[i] = max/min(dp[i], dp[i-num]+nums);
+2、存在问题(bool)：dp[i]=dp[i]||dp[i-num];
+3、组合问题：dp[i]+=dp[i-num];
+
 ### 01背包
-```java
-import java.util.*;
-public class Main{
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        int n = sc.nextInt();
-        int m = sc.nextInt();
-        int[] v = new int[n];
-        int[] w = new int[n];
-        for(int i = 0; i<n;i++){
-            v[i] = sc.nextInt();
-            w[i] = sc.nextInt();
-        }
-        
-        int[] dp = new int[m+1];
-        for (int i = 0; i<n;i++){
-            for (int j = m;j>=v[i];j--){
-                dp[j] = Math.max(dp[j], dp[j-v[i]]+w[i]);
-            }
-        }
-        System.out.print(dp[m]);
-    }
+`dp[i][j] = max(dp[i-1][j], dp[i][j-w[i]]+v[i])`
+```c++
+#include<bits/stdc++.h>
+using namespace std;
+
+const int N = 1010;
+
+int n, m;
+int value[N], weight[N];
+int dp[N];
+
+int main() {
+    cin >> n >> m;
+    for(int i = 0; i < n; i++) cin >> value[i] >> weight[i];
+    for(int i = 0; i < n; i++) 
+        for(int j = m; j >= weight[i]; j--) 
+            dp[j] = max(dp[j], dp[j-weight[i]]+value[i]);
+    cout << dp[m] << endl;
+ return 0;    
 }
 ```
 ### 完全背包
 
-**核心：状态压缩——外循环是正向，内循循环正序序v[i]~m**
+**核心：状态压缩——外循环是正向，内循循环正序序v[i]~m**  `dp[i][j] = max(dp[i-1][j], dp[i][j-w[i]]+v[i])`
 ```java
 import java.util.*;
 public class Main{
@@ -1356,6 +1361,31 @@ public class Main{
     }
 }
 ```
+
+### 完全背包求 最值 方案
+求出符合某个方案的最X的条件。关键因素在于如何实现转移方程。
+```c++
+class Solution {
+public:
+    int coinChange(vector<int>& coins, int amount) {
+        int n = coins.size();
+        // 注意这里需要使用long long，否则爆INT
+        vector<long long> dp(amount+1, INT_MAX);
+        dp[0] = 0;
+        for(auto &c : coins){
+            // 因为是完全背包，所有内循环正向枚举，
+            for(int i = 0;i<=amount;i++){
+                if(i>=c){
+                    dp[i] = min(dp[i], dp[i-c]+1);
+                }
+            }
+        }
+        return dp[amount] == INT_MAX ? -1:dp[amount];
+    }
+};
+```
+
+
 ### 完全背包求方案数
 ```java
 
@@ -1425,4 +1455,10 @@ Collections.sort(list, (a, b)->{
 public int gcd(int x, int y) {
     return x == 0 ? y : gcd(y % x, x);
 }
+```
+# C++ 头文件
+https://www.acwing.com/blog/content/17174/
+```c++
+#include<bits/stdc++.h>
+using namespace std;
 ```
