@@ -285,7 +285,7 @@ def dfs(root):
     if root not in dic:
         return
     # 遍历每一个字节点
-    for son in dic[root]:
+    for son in dic[root]: 
         dfs(son)
         # 选取当前root节点，因此所有的儿子都不能选取
         dp[root][1] += dp[son][0]
