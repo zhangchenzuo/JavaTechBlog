@@ -159,6 +159,7 @@ while(r>l){
 
 ## 前缀和与差分
 前缀和的思路往往还是在代码中部分被使用。一般是通过预处理出来前缀和的方法，实现降低复杂度的目的。
+[2602. 使数组元素全部相等的最少操作次数](https://leetcode.cn/problems/minimum-operations-to-make-all-array-elements-equal/)
 ```c++
 int n = nums.size();
 vector<int> presum(n+1, 0);
@@ -169,7 +170,7 @@ for(int i = 0;i<n;i++){
 
 
 差分的主要思路是**利用差分统计区间的覆盖频次问题**。维护了一个差分数组，对于每次的覆盖区间，**区间头位置+1，区间结尾+1的位置-1**。最后在进行累加，这样数组每个位置就对应了相应位置的频次。
-!(1893. 检查是否区域内所有整数都被覆盖)[https://leetcode-cn.com/problems/check-if-all-the-integers-in-a-range-are-covered/]
+[1893. 检查是否区域内所有整数都被覆盖](https://leetcode-cn.com/problems/check-if-all-the-integers-in-a-range-are-covered/)
 ```java
 //ranges = [[1,2],[3,4],[5,6]], left = 2, right = 5
 class Solution {
