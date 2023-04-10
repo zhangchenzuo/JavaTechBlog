@@ -105,27 +105,66 @@ public:
 ```
 
 ### STL 二分库函数
+- `upper_bound()`大于target的最小值，如果找不到返回`nums.end()`。
+- `lower_bound()`大于等于target的最小值。
+
 ```c++
     vector<int> ans = {3,4,4,5,6};
-    // 大于5的最小 6, index1 = 5
-    auto index1 = upper_bound(nums.begin(), nums.end(), 5);
-    cout << "index 1: " << index1 -nums.begin() << endl;
+
     auto index2 = upper_bound(nums.begin(), nums.end(), 4);
-    cout << "index 2: " << *index2 << endl;
-    // index3 = 3
+    cout << "index 2 value: " << *index2 << endl; // 5
+    cout << "index 2 index: " << index2 -nums.begin() << endl; // 3
+
     auto index3 = upper_bound(nums.begin(), nums.end(), 3);
-    cout << "index 3: " << index3-nums.begin() << endl;
-    // idx = 5
+    cout << "index 3 value: " << *index3 << endl; // 4
+    cout << "index 3 index: " << index3-nums.begin() << endl; // 1
+
+
     auto index4 = lower_bound(nums.begin(), nums.end(), 5);
-    cout << "index 4: " << *index4  << endl;
+    cout << "index 4 value: " << *index4  << endl; // 5
+    cout << "index 4 index: " << index4-nums.begin()  << endl; // 3
     // index = 4 大于等于4的第一个
     auto index5 = lower_bound(nums.begin(), nums.end(), 4);
-    cout << "index 5: " << index5-nums.begin() << endl;
-    // index = 2 大于等于3的第一个
-    auto index6 = lower_bound(nums.begin(), nums.end(), 3);
-    cout << "index 6: " << *index6 << endl;
+    cout << "index 5 value: " << *index5  << endl; // 4
+    cout << "index 5 index: " << index5-nums.begin() << endl; // 1
 ```
 
+
+```c++
+template <class ForwardIterator, class T>
+ForwardIterator lower_bound (ForwardIterator first, ForwardIterator last, const T& val)
+{
+    ForwardIterator it;
+    iterator_traits<ForwardIterator>::difference_type count, step;
+    count = distance(first,last);
+    while (count>0)
+    {
+        it = first; step=count/2; advance (it,step);
+        if (*it<val) {  //或者 if (comp(*it,val))，对应第 2 种语法格式
+            first=++it;
+            count-=step+1;
+        }
+        else count=step;
+    }
+    return first;
+}
+
+// 3,4,4,5
+int l = 0;
+int r = n;
+int count = r-l;
+while(r>l){
+    int mid = l+(r-l)/2;
+    int cur = nums[mid];
+    if(cur < target){
+        l = mid+1;
+    }else{
+        r= mid;
+    }
+    return l;
+}
+
+```
 
 ## 前缀和与差分
 前缀和的思路往往还是在代码中部分被使用。一般是通过预处理出来前缀和的方法，实现降低复杂度的目的。
