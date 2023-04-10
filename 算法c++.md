@@ -1,5 +1,6 @@
 - [算法思想](#算法思想)
   - [二分](#二分)
+    - [STL 二分库函数](#stl-二分库函数)
   - [前缀和与差分](#前缀和与差分)
   - [dp](#dp)
     - [线性dp（字符串编辑距离）](#线性dp字符串编辑距离)
@@ -102,6 +103,30 @@ public:
     }
 };
 ```
+
+### STL 二分库函数
+```c++
+    vector<int> ans = {3,4,4,5,6};
+    // 大于5的最小 6, index1 = 5
+    auto index1 = upper_bound(nums.begin(), nums.end(), 5);
+    cout << "index 1: " << index1 -nums.begin() << endl;
+    auto index2 = upper_bound(nums.begin(), nums.end(), 4);
+    cout << "index 2: " << *index2 << endl;
+    // index3 = 3
+    auto index3 = upper_bound(nums.begin(), nums.end(), 3);
+    cout << "index 3: " << index3-nums.begin() << endl;
+    // idx = 5
+    auto index4 = lower_bound(nums.begin(), nums.end(), 5);
+    cout << "index 4: " << *index4  << endl;
+    // index = 4 大于等于4的第一个
+    auto index5 = lower_bound(nums.begin(), nums.end(), 4);
+    cout << "index 5: " << index5-nums.begin() << endl;
+    // index = 2 大于等于3的第一个
+    auto index6 = lower_bound(nums.begin(), nums.end(), 3);
+    cout << "index 6: " << *index6 << endl;
+```
+
+
 ## 前缀和与差分
 前缀和的思路往往还是在代码中部分被使用。一般是通过预处理出来前缀和的方法，实现降低复杂度的目的。
 ```c++
