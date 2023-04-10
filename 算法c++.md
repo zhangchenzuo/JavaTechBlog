@@ -105,28 +105,19 @@ public:
 ```
 
 ### STL 二分库函数
+
 - `upper_bound()`大于target的最小值，如果找不到返回`nums.end()`。
 - `lower_bound()`大于等于target的最小值。
 
+同样的，对于小于target的最大值，我们需要调用`lower_boud`并对得到的it--，这样可以得到正确的数值，但是得不到正确的迭代器或者数值。
+
 ```c++
-    vector<int> ans = {3,4,4,5,6};
-
-    auto index2 = upper_bound(nums.begin(), nums.end(), 4);
-    cout << "index 2 value: " << *index2 << endl; // 5
-    cout << "index 2 index: " << index2 -nums.begin() << endl; // 3
-
-    auto index3 = upper_bound(nums.begin(), nums.end(), 3);
-    cout << "index 3 value: " << *index3 << endl; // 4
-    cout << "index 3 index: " << index3-nums.begin() << endl; // 1
-
-
-    auto index4 = lower_bound(nums.begin(), nums.end(), 5);
-    cout << "index 4 value: " << *index4  << endl; // 5
-    cout << "index 4 index: " << index4-nums.begin()  << endl; // 3
-    // index = 4 大于等于4的第一个
-    auto index5 = lower_bound(nums.begin(), nums.end(), 4);
-    cout << "index 5 value: " << *index5  << endl; // 4
-    cout << "index 5 index: " << index5-nums.begin() << endl; // 1
+    vector<int> nums = {3,3,4,4,5};
+    cout << lower_bound(nums.begin(), nums.end(), 4)-nums.begin() << endl; // nums[1] = 4 第一个大于等于 target的 index
+    cout << upper_bound(nums.begin(), nums.end(), 4)-nums.begin() << endl; // nums[3] = 5 第一大于target的index
+    
+    cout << lower_bound(nums.begin(), nums.end(), 4)-1-nums.begin() << endl; // nums[1] =3  第一个小于target的数值，但是不是最靠前的
+    cout << upper_bound(nums.begin(), nums.end(), 4)-1-nums.begin() << endl; // nums[3] = 4 第一个小于等于target的数值，但是不是最靠前的
 ```
 
 
