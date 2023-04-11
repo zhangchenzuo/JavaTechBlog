@@ -1,6 +1,6 @@
 - [spark 框架和运行原理](#spark-框架和运行原理)
   - [Spark组件](#spark组件)
-  - [基本框架](#基本框架)
+  - [运行框架](#运行框架)
   - [集群运行](#集群运行)
 - [Job，Stage，Task](#jobstagetask)
   - [Job](#job)
@@ -28,12 +28,12 @@
 - Spark SQL：
 Spark Sql 是Spark来**操作结构化数据的程序包**，可以使用SQL语句的方式来查询数据。每个数据库表被当做一个RDD，Spark SQL查询被转换为Spark操作。
 
-## 基本框架
+## 运行框架
 
 master/worker指的是资源的调度层面，申请内存等。driver/executor则是在任务的执行调度层面。
 
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/7d5f1c3b621c4e3a80af25c4e771f01f.png)
-- Cluster Manager：控制整个集群，监控worker。在standalone模式中即为Master主节点，控制整个集群，监控worker。在YARN模式中为资源管理器
+- Cluster Manager（master）：控制整个集群，监控worker。在standalone模式中即为Master主节点，控制整个集群，监控worker。在YARN模式中为资源管理器
 
 - Worker：
 从节点，负责控制计算节点，启动Executor或者Driver。集群中任何一个可以运行spark应用代码的节点。**Worker就是物理节点**，可以在上面**启动Executor/worker进程**。一个worker上的memory、cpu由多个executor共同分摊。
@@ -54,8 +54,8 @@ master/worker指的是资源的调度层面，申请内存等。driver/executor�
 ## 集群运行
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/bef07a0b0a0d4df0a65861d70566385e.png)
 
-1. 为应用构建起基本的运行环境，即由Driver创建一个SparkContext进行资源的申请、任务的分配和监控。
-2. SparkContext向资源管理器（可以是Standalone，Mesos，Yarn）申请运行Executor资源，并启动StandaloneExecutorbackend。
+1. Driver进程启动，创建一个SparkContext进行资源的申请、任务的分配和监控。发送请求到Master节点上,进行Spark应用程序的注册。
+2. SparkContext向资源管理器（Standalone，Mesos，Yarn）申请运行Executor资源。Master在接受到Spark应用程序的注册申请之后,会发送给Worker进行资源的调度和分配。Worker 在接受Master的请求之后，启动Executor来分配资源。Executor启动分配资源好后，向Driver进行反注册。
 3. SparkContext根据RDD的依赖关系构建DAG图，DAG图提交给DAGScheduler解析成Stage，然后把一个个TaskSet提交给底层调度器TaskScheduler处理。 
 4. Executor向SparkContext申请Task，TaskScheduler将Task发放给Executor运行并提供应用程序代码。
 5. Task在Executor上运行把执行结果反馈给TaskScheduler，然后反馈给DAGScheduler，运行完毕后写入数据并释放所有资源。
