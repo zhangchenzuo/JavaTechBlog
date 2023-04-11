@@ -120,43 +120,6 @@ public:
     cout << upper_bound(nums.begin(), nums.end(), 4)-1-nums.begin() << endl; // nums[3] = 4 第一个小于等于target的数值，但是不是最靠前的
 ```
 
-
-```c++
-template <class ForwardIterator, class T>
-ForwardIterator lower_bound (ForwardIterator first, ForwardIterator last, const T& val)
-{
-    ForwardIterator it;
-    iterator_traits<ForwardIterator>::difference_type count, step;
-    count = distance(first,last);
-    while (count>0)
-    {
-        it = first; step=count/2; advance (it,step);
-        if (*it<val) {  //或者 if (comp(*it,val))，对应第 2 种语法格式
-            first=++it;
-            count-=step+1;
-        }
-        else count=step;
-    }
-    return first;
-}
-
-// 3,4,4,5
-int l = 0;
-int r = n;
-int count = r-l;
-while(r>l){
-    int mid = l+(r-l)/2;
-    int cur = nums[mid];
-    if(cur < target){
-        l = mid+1;
-    }else{
-        r= mid;
-    }
-    return l;
-}
-
-```
-
 ## 前缀和与差分
 前缀和的思路往往还是在代码中部分被使用。一般是通过预处理出来前缀和的方法，实现降低复杂度的目的。
 [2602. 使数组元素全部相等的最少操作次数](https://leetcode.cn/problems/minimum-operations-to-make-all-array-elements-equal/)
@@ -184,7 +147,7 @@ class Solution {
         int curr = 0;
         for (int i = 1; i <= 50; ++i) {
             curr += diff[i];
-            if (i >= left && i <= right && curr <= 0) {
+            if (left <= i && i <= right && curr <= 0) {
                 return false;
             }
         }
@@ -198,34 +161,28 @@ class Solution {
 
 [1589. 所有排列中的最大和](https://leetcode-cn.com/problems/maximum-sum-obtained-of-any-permutation/)
 
-```java
-class Solution {
-    public int maxSumRangeQuery(int[] nums, int[][] requests) {
-        // 差分数组
-        Arrays.sort(nums);
-        int mod = 1000000007;
-        int n = nums.length;
-        int[] f = new int[n];
-        int ans = 0;
+```c++
+    int maxSumRangeQuery(vector<int>& nums, vector<vector<int>>& requests) {
+        sort(nums.begin(), nums.end());
+        int n = nums.size();
+        vector<long long> f(n+1);
         // 差分数组 处理好每个位置的头尾跳变
-        for (int[] e:requests){
-            f[e[0]] += 1;
-            if (e[1]+1<n) f[e[1]+1] -= 1;
+        for(auto &r:requests){
+            f[r[0]]++;
+            f[r[1]+1]--;
         }
-        // 从头开始进行累加 这样其实是巧妙的利用了跳变
-        for (int i = 1; i<n ;i++){
+        // f成为 [1,n]的前缀和  从头开始进行累加 这样其实是巧妙的利用了跳变
+        for(int i = 1;i<=n;i++){
             f[i] += f[i-1];
         }
-        //
-        Arrays.sort(f);
-        for (int i = n-1; i>=0; i--){
-            if (f[i] == 0) return ans;
-            //ans = (int)((long)(ans + f[i]*nums[i])%mod);
-            ans = (int)(ans + 1L*f[i]*nums[i])%mod;
+        sort(f.begin(), f.end());
+        int mod = 1e9+7;
+        long long ans = 0;
+        for(int i = 0;i<n;i++){
+            ans = (ans + f[i+1]*nums[i])%mod;
         }
         return ans;
     }
-}
 ```
 ## dp
 ### 线性dp（字符串编辑距离）
@@ -234,31 +191,27 @@ class Solution {
 
 状态转移方程：如果word1[i] == word[j]，说明当前两个字符串一样，可以从对角线转移得到。否则考虑其上方，前方，和对角线三个元素的最值转移得到。在本题中dp[i][j] = min(dp[i-1][j-1], dp[i][j-1], dp[i-1][j])+1。
 
-```java
-class Solution {
-    public int minDistance(String word1, String word2) {
-        int n = word1.length();
-        int m = word2.length();
-        int[][] dp = new int[n+1][m+1];
-        for(int i = 0; i<n+1;i++){
-            dp[i][0] = i; // dp[0][0] = 0 表示两个都什么都没有
-        }
-        for(int j = 0; j<m+1;j++){
-            dp[0][j] = j; // dp[0][1] = 1表示为了一致，直接添加就可以
-        }
-        for(int i = 1;i<n+1;i++){
-            for(int j = 1;j<m+1;j++){
-                if (word1.charAt(i-1) == word2.charAt(j-1)){
-                    dp[i][j] = dp[i-1][j-1];
-                }else{// dp[i-1][j]是删除，dp[i][j-1]插入，dp[i-1][j-1]替换
-                    dp[i][j] = Math.min(Math.min(dp[i-1][j], dp[i][j-1]),dp[i-1][j-1])+1;
+```c++
+    int minDistance(string word1, string word2) {
+        int n = word1.size();
+        int m = word2.size();
+        vector<vector<int>> dp(n+1, vector<int>(m+1));
+        // dp[i][j]表示指向第i，第j个char时候的最加情况
+        for(int i = 0;i<=n;i++) dp[i][0] = i;
+        for(int j = 0;j<=m;j++) dp[0][j] = j;
+        for(int i = 1;i<=n;i++){
+            for(int j = 1;j<=m;j++){
+                if(word1[i-1] == word2[j-1]) {
+                    // 如果正好匹配，最佳情况一定是匹配
+                    dp[i][j] = dp[i-1][j-1];  
+                }else{
+                    // 否则是三个操作之一，word1替换 dp[i-1][j-1], 删除dp[i-1][j], 插入dp[i][j-1]
+                    dp[i][j] = min(min(dp[i-1][j], dp[i][j-1]), dp[i-1][j-1])+1;
                 }
-
             }
         }
         return dp[n][m];
-    }
-}
+        }
 ```
 
 ### 区间dp（合并石子，最长回文子序列）
