@@ -23,6 +23,8 @@
   - [开发调优](#开发调优)
   - [资源调优](#资源调优)
   - [数据倾斜调优](#数据倾斜调优)
+    - [现象和原理](#现象和原理)
+    - [优化方案](#优化方案)
   - [shuffle调优](#shuffle调优)
 - [其他问题](#其他问题)
   - [为什么shuffle性能差/shuffle发生了什么](#为什么shuffle性能差shuffle发生了什么)
@@ -76,6 +78,10 @@ master/worker指的是资源的调度层面，申请内存等。driver/executor�
 一个Job包含多个RDD及作用于相应RDD上的各种操作，它包含很多task的并行计算。它通常由一个或多个RDD转换操作和行动操作组成，这些操作会被划分为一些Stage
 ## stage
 是Job的基本调度单位，由一组共享相同的Shuffle依赖关系的任务组成。有一个job分割多个stage的的点在于shuffle，宽依赖Stage需要进行Shuffle操作，而窄依赖Stage则不需要。
+
+比如某个job有一个reduceByKey，会被切分为两个stage。
+  1. stage0: 从textFile到map，最后一步是**shuffle write**操作。我们可以简单理解为对pairs RDD中的数据进行分区操作，每个task处理的数据中，相同的key会写入同一个磁盘文件内。 
+  2. stage1：主要是执行从reduceByKey到collect操作，stage1的各个task一开始运行，就会首先执行shuffle read操作。执行**shuffle read**操作的task，会从stage0的各个task所在节点**拉取属于自己处理的那些key**，然后对同一个key进行全局性的聚合或join等操作。
 ### 宽窄依赖
 - 窄依赖：
 指**父RDD的每一个分区最多被一个子RDD的分区所用**，表现为一个父RDD的分区对应于一个子RDD的分区，和两个父RDD的分区对应于一个子RDD 的分区。
@@ -198,9 +204,33 @@ Spark速度更快，因为可以使用多线程并且可以使用内存加速计
 
 
 
-  ## 数据倾斜调优
+## 数据倾斜调优
+### 现象和原理
+Spark作业看起来会运行得非常缓慢，甚至可能因为某个task处理的数据量过大导致内存溢出。
+>数据倾斜出现的场景：
 
-  ## shuffle调优
+- 绝大多数task执行得都非常快，但个别task执行极慢。比如，总共有1000个task，997个task都在1分钟之内执行完了，但是剩余两三个task却要一两个小时。这种情况很常见。
+- 原本能够正常执行的Spark作业，某天突然报出OOM（内存溢出）异常，观察异常栈，是我们写的业务代码造成的。这种情况比较少见。
+
+>数据倾斜发生的原理:
+
+在进行shuffle的时候，必须将各个节点上相同的key拉取到某个节点上的一个task来进行处理。比如按照key进行聚合或join等操作。此时如果某个key对应的数据量特别大的话，就会发生数据倾斜。比如大部分key对应10条数据，但是个别key却对应了100万条数据，那么大部分task可能就只会分配到10条数据，然后1秒钟就运行完了；但是个别task可能分配到了100万数据，要运行一两个小时。因此，整个Spark作业的运行进度是由运行时间最长的那个task决定的。
+
+### 优化方案
+1. 预处理数据：在spark之前处理数据。保证spark运行效率。
+2. 过滤少数倾斜Key：某些key异常的数据较多。可以动态判定哪些key的数据量最多然后再进行过滤，那么可以使用sample算子对RDD进行采样，然后计算出每个key的数量，取数据量最多的key过滤掉即可。
+3. 提高shuffle并行度：`spark.sql.shuffle.partitions`代表了shuffle read task的并行度，默认是200比较小。增加shuffle read task的数量，可以让原本分配给一个task的多个key分配给多个task，从而让每个task处理比原来更少的数据。（方案对于某个key倾斜不适用，因为这个key还是被打到了某一个task）
+4. Join使用broadcast/reduce类使用随机前缀打散key：对于join改成broadcast实际上是避免了shuffle。reduce方法实际上是降低了某一个key的数据量。
+5. 两个表都很大的join，可以打散+聚合。
+
+
+
+## shuffle调优
+大多数Spark作业的性能主要就是消耗在了shuffle环节，因为该环节包含了大量的磁盘IO、序列化、网络数据传输等操作。
+
+有两种shuffle，1.2以后默认的是HashShuffleManager，HashShuffleManager有着一个非常严重的弊端，就是会产生大量的中间磁盘文件，进而由大量的磁盘IO操作影响了性能。后面变成了SortShuffleManager
+
+https://tech.meituan.com/2016/05/12/spark-tuning-pro.html
 # 其他问题
 ## 为什么shuffle性能差/shuffle发生了什么
 1. 各个节点上的相同key都会先写入本地磁盘文件中，然后
