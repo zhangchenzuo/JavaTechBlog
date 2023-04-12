@@ -10,6 +10,8 @@
     - [数位DP](#数位dp)
   - [dfs（回溯）](#dfs回溯)
   - [bfs（拓扑排序）](#bfs拓扑排序)
+    - [平衡树+BFS](#平衡树bfs)
+    - [并查集+BFS](#并查集bfs)
   - [图论](#图论)
     - [无向图（bfs，dfs）](#无向图bfsdfs)
     - [有向图（拓扑排序）](#有向图拓扑排序)
@@ -63,12 +65,11 @@ public:
     int lengthOfLIS(vector<int>& nums) {
         // 为什么要做替换，看起来只有最后一个元素真正起到作用了？
         // [0,8,4,12,2,3,4]为例子
-        // [0] -> [0,8] -> [0,4] -> [0,4,12] 
+        // [0] -> [0,8] -> [0,4] -> [0,4,12]
         // 关键替换 [0,2,12] -> [0,2,3,4]
         // 如果不替换后面的3，4都无法进来
          int n = nums.size();
          vector<int> list;
-
         // 二分查找思考的点：1. 相等如何处理 2. 位于边界怎么处理
         auto bs = [&](int target){
             int n = list.size();
@@ -303,6 +304,132 @@ print(max(dp[root]))
 回溯算法需要注意一点，**在dfs退出以后，记着恢复现场**。
 ## bfs（拓扑排序）
 bfs是我非常喜欢的一个算法，非常的清晰。使用的场合较多，**树的遍历，可行性的宽搜，以及典型的拓扑排序问题**，这个我会下面仔细分析下。
+
+### 平衡树+BFS
+[网格图中最少访问的格子数](https://leetcode.cn/problems/minimum-number-of-visited-cells-in-a-grid/)
+
+```c++
+class Solution {
+public:
+    int minimumVisitedCells(vector<vector<int>>& grid) {
+        // 朴素BFS，需要遍历到每一个点。并且需要维护一个visited标记已经被加入queue的点
+        // 我们希望可以得到一个更好的方案，可以直接得到还没被加入队列的点。
+        // 我们可以注意到，每次在进行bfs时，我们是将一个范围内的点都加入队列里。
+        // 1. 平衡树，可以得到符合范围的区间的第一个的iterator
+        // 2. 并查集，类似链表，每个点都指向自己的下一个可行节点。
+        int n = grid.size();
+        int m = grid[0].size();
+        if(n == 1 && m ==1)return 1;
+        vector<set<int>> row(n+1); // 每一个行都建立一个平衡树，得到这一行的点的访问情况。
+        vector<set<int>> col(m+1); // 每一个列都建立一个平衡树，得到这一列的点的访问情况。
+        // 初始平衡树。加入n.m比较越界
+        for(int i = 0;i<=n;i++){
+            for(int j = 0;j<=m;j++){
+                row[i].insert(j);
+                col[j].insert(i);
+            }
+        }
+
+        queue<pair<int, int>> q;
+        q.emplace(0,0);
+        int ans = 1;
+        while(!q.empty()){
+            ans++;
+            int size = q.size();
+            for (int i = 0;i<size;i++){
+                auto [x,y] = q.front();
+                
+                q.pop();
+                int step = grid[x][y];
+                int max_x = min(n-1, x+step);
+                int max_y = min(m-1, y+step);
+                // y
+                for(auto it = row[x].upper_bound(y); *it<= max_y; it = row[x].erase(it)){
+                    q.emplace(x, *it);
+                    if( x == n-1 && *it == m-1) return ans;
+                }
+                //x
+                for(auto it = col[y].upper_bound(x); *it<= max_x; it = col[y].erase(it)){
+                    q.emplace(*it, y);
+                    if( *it == n-1 && y == m-1) return ans;
+                }
+            }
+        }
+        return -1;
+
+    }
+};
+
+```
+### 并查集+BFS
+使用一个特殊的并查集。每个节点的初始父节点指向自己，被使用以后修改父节点指向到下一个节点。
+
+```c++
+class UF{
+private:
+    vector<int> fa;
+public:
+    UF(int n){
+        for(int i =0;i<n;i++) fa.push_back(i);
+    }
+
+    int find(int x){
+        if (fa[x] == x){
+            return x;
+        }
+        fa[x] = find(fa[x]);
+        return fa[x];
+    }
+
+    void merge(int x) {
+        fa[x] = x+1;
+    }
+};
+class Solution {
+  using Node = tuple<int, int, int>;
+  
+ public:
+  int minimumVisitedCells(vector<vector<int>>& grid) {
+    int n = grid.size();
+    int m = grid[0].size();
+
+    vector<UF> row_uf(n+1, UF(m+1));
+    vector<UF> col_uf(m+1, UF(n+1));
+
+    queue<Node> q;
+    q.emplace(1, 0, 0);
+    while (!q.empty()) {
+      auto [d, x, y] = q.front();
+      q.pop();
+      if (x == n - 1 && y == m - 1) {
+        return d;
+      }
+      
+      int g = grid[x][y];
+      
+      // right
+      UF &row = row_uf[x];
+      int right_bound = min(m, g + y + 1);
+      // 注意迭代方案，每次需要merge当前点，然后迭代到下一个坐标点
+      for (int p = row.find(y+1); p < right_bound; p = row.find(p+1)) {
+        q.emplace(d + 1, x, p);
+        row.merge(p);
+
+      }
+      
+      // down
+      UF &col = col_uf[y];
+      int down_bound = min(n, g + x + 1);
+      for (int p = col.find(x + 1); p < down_bound; p = col.find(p+1)) {
+        q.emplace(d + 1, p, y);
+        col.merge(p);
+      }
+    }
+    return -1;
+  }
+};
+
+```
 
 ## 图论
 ### 无向图（bfs，dfs）
