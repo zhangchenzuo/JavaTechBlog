@@ -216,70 +216,59 @@ class Solution {
 ```
 
 ### 区间dp（合并石子，最长回文子序列）
-时间复杂度一般是O(n^3)。也就是三个循环，首先外层倒叙遍历起始点i = [n-2, 0]，第二层循环终点j = [i+1, n-1]，第三层是分割点k = [i, j-1] (因为一般转移方程是dp[i][j] = max(dp[i][k],dp[k+1][j]) )。
+时间复杂度一般是O(n^3)。也就是三个循环，首先外层倒叙遍历起始点i = [n-2, 0]，第二层循环终点j = [i+1, n-1]，第三层是分割点k = [i, j-1] (因为一般转移方程是dp[i][j] = max(dp[i][j], dp[i][k]+dp[k+1][j])+cal )。
 [戳气球](https://leetcode-cn.com/problems/burst-balloons/),[合并石子](https://leetcode-cn.com/problems/minimum-cost-to-merge-stones/)
-```java
+```c++
 class Solution {
-    public int maxCoins(int[] nums) {
-        int n = nums.length;
-        int[] arr = new int[n+2];
-        n = arr.length;
-        arr[0] = 1;
-        arr[n-1] = 1;
-        for (int i = 1; i<n-1;i++){
-            arr[i] = nums[i-1];
+public:
+    int maxCoins(vector<int>& nums) {
+        int n = nums.size();
+        vector<int> arr(n+2,1);
+        for (int i = 0;i<n;i++){
+            arr[i+1] = nums[i];
         }
-        int[][] dp = new int[n][n]; // dp[i][j]表示扎破，开区间
-        // n-1是1
-        for(int i = n-2;i>=0;i--){
+        n = arr.size();
+        vector<vector<int>> dp(n, vector<int>(n,0)); // 表示开区间，更容易思考
+        // 为什么使用开区间。因为对于区间（i，j）中间的点 k 是最后一个扎破的话，其实左右分别是i，j。
+        // 如果是闭区间，左右就是i-1，j+1 
+
+        // n-1是边界，n-2是开区间的边界也不用考虑，直接n-3开始
+        for (int i = n-3;i>=0;i--){
             // 因为是开区间，因此跨越一个没什么意义
             for(int j = i+2;j<n;j++){
                 // 必须先+1,这样才是真实的可以戳破的
-                for(int k = i+1; k<j;k++){
-                    dp[i][j] = Math.max(dp[i][j], dp[i][k]+dp[k][j]+arr[k]*arr[i]*arr[j]);
+                for(int k = i+1;k<j;k++){
+                    dp[i][j] = max(dp[i][j], dp[i][k]+dp[k][j]+arr[k]*arr[i]*arr[j]);
                 }
             }
-        
         }
         return dp[0][n-1];
     }
-}
-
+};
 ```
 ### 树形DP(打家劫舍III，没有上司的舞会 )
 结合了DFS的思路，核心思路在于，维护一个字典，key是root，val是全部的字节点。然后二维的dp[root][0],dp[root][1]表示选取或者不选取的情况。
 
-```python
-N = int(input())
-w = [0]
-for i in range(N):
-    w.append(int(input()))
-dic = {}
-root = sum([i for i in range(1,N+1)])
-# 首先构建出来当前的子孙关系
-for i in range(N-1):
-    son, par = map(int, input().split())
-    if par not in dic:
-        dic[par] = []
-    dic[par].append(son)
-    root -= son
-dp = [[0]*2 for _ in range(N+1)]   
-##  -----------------树形dfs模板------------------------------ ##
-def dfs(root):
-    dp[root][1] = w[root]
-    if root not in dic:
-        return
-    # 遍历每一个字节点
-    for son in dic[root]: 
-        dfs(son)
-        # 选取当前root节点，因此所有的儿子都不能选取
-        dp[root][1] += dp[son][0]
-        # 不选择当前的节点，儿子节点可选可不选
-        dp[root][0] += max(dp[son][0], dp[son][1])
-        
-dfs(root)
-print(max(dp[root]))
+```c++
+class Solution {
+public:
+    vector<int> dfs(TreeNode* root){
+        if(!root){
+            return {0,0};
+        }
+        // 如果是多叉树，需要迭代每个循环。
+        vector<int> r = dfs(root->right);
+        vector<int> l = dfs(root->left);
+        int robThis = l[1]+r[1]+root->val;
+        int notRobThis = max(r[0], r[1])+max(l[0],l[1]);
+        return {robThis, notRobThis};
+    }
 
+    int rob(TreeNode* root) {
+        vector<int> ans = dfs(root);
+        return max(ans[0],ans[1]);
+    }
+};
 ```
 ### 状态压缩DP（最短Hamilton路径，1723. 完成所有工作的最短时间, 1125. 最小的必要团队）
 核心是将多个并存的状态转换为二进制的思想。这个方法的特点在于数据量一般不能很大，因为最大就是31。否则枚举不开。并且这个问题的特点一般在于如何转移得到当前的状态。
