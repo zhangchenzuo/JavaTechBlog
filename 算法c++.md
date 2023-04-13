@@ -10,6 +10,8 @@
     - [数位DP](#数位dp)
   - [dfs（回溯）](#dfs回溯)
   - [bfs（拓扑排序）](#bfs拓扑排序)
+    - [平衡树+BFS](#平衡树bfs)
+    - [并查集+BFS](#并查集bfs)
   - [图论](#图论)
     - [无向图（bfs，dfs）](#无向图bfsdfs)
     - [有向图（拓扑排序）](#有向图拓扑排序)
@@ -63,12 +65,11 @@ public:
     int lengthOfLIS(vector<int>& nums) {
         // 为什么要做替换，看起来只有最后一个元素真正起到作用了？
         // [0,8,4,12,2,3,4]为例子
-        // [0] -> [0,8] -> [0,4] -> [0,4,12] 
+        // [0] -> [0,8] -> [0,4] -> [0,4,12]
         // 关键替换 [0,2,12] -> [0,2,3,4]
         // 如果不替换后面的3，4都无法进来
          int n = nums.size();
          vector<int> list;
-
         // 二分查找思考的点：1. 相等如何处理 2. 位于边界怎么处理
         auto bs = [&](int target){
             int n = list.size();
@@ -215,70 +216,59 @@ class Solution {
 ```
 
 ### 区间dp（合并石子，最长回文子序列）
-时间复杂度一般是O(n^3)。也就是三个循环，首先外层倒叙遍历起始点i = [n-2, 0]，第二层循环终点j = [i+1, n-1]，第三层是分割点k = [i, j-1] (因为一般转移方程是dp[i][j] = max(dp[i][k],dp[k+1][j]) )。
+时间复杂度一般是O(n^3)。也就是三个循环，首先外层倒叙遍历起始点i = [n-2, 0]，第二层循环终点j = [i+1, n-1]，第三层是分割点k = [i, j-1] (因为一般转移方程是dp[i][j] = max(dp[i][j], dp[i][k]+dp[k+1][j])+cal )。
 [戳气球](https://leetcode-cn.com/problems/burst-balloons/),[合并石子](https://leetcode-cn.com/problems/minimum-cost-to-merge-stones/)
-```java
+```c++
 class Solution {
-    public int maxCoins(int[] nums) {
-        int n = nums.length;
-        int[] arr = new int[n+2];
-        n = arr.length;
-        arr[0] = 1;
-        arr[n-1] = 1;
-        for (int i = 1; i<n-1;i++){
-            arr[i] = nums[i-1];
+public:
+    int maxCoins(vector<int>& nums) {
+        int n = nums.size();
+        vector<int> arr(n+2,1);
+        for (int i = 0;i<n;i++){
+            arr[i+1] = nums[i];
         }
-        int[][] dp = new int[n][n]; // dp[i][j]表示扎破，开区间
-        // n-1是1
-        for(int i = n-2;i>=0;i--){
+        n = arr.size();
+        vector<vector<int>> dp(n, vector<int>(n,0)); // 表示开区间，更容易思考
+        // 为什么使用开区间。因为对于区间（i，j）中间的点 k 是最后一个扎破的话，其实左右分别是i，j。
+        // 如果是闭区间，左右就是i-1，j+1 
+
+        // n-1是边界，n-2是开区间的边界也不用考虑，直接n-3开始
+        for (int i = n-3;i>=0;i--){
             // 因为是开区间，因此跨越一个没什么意义
             for(int j = i+2;j<n;j++){
                 // 必须先+1,这样才是真实的可以戳破的
-                for(int k = i+1; k<j;k++){
-                    dp[i][j] = Math.max(dp[i][j], dp[i][k]+dp[k][j]+arr[k]*arr[i]*arr[j]);
+                for(int k = i+1;k<j;k++){
+                    dp[i][j] = max(dp[i][j], dp[i][k]+dp[k][j]+arr[k]*arr[i]*arr[j]);
                 }
             }
-        
         }
         return dp[0][n-1];
     }
-}
-
+};
 ```
 ### 树形DP(打家劫舍III，没有上司的舞会 )
 结合了DFS的思路，核心思路在于，维护一个字典，key是root，val是全部的字节点。然后二维的dp[root][0],dp[root][1]表示选取或者不选取的情况。
 
-```python
-N = int(input())
-w = [0]
-for i in range(N):
-    w.append(int(input()))
-dic = {}
-root = sum([i for i in range(1,N+1)])
-# 首先构建出来当前的子孙关系
-for i in range(N-1):
-    son, par = map(int, input().split())
-    if par not in dic:
-        dic[par] = []
-    dic[par].append(son)
-    root -= son
-dp = [[0]*2 for _ in range(N+1)]   
-##  -----------------树形dfs模板------------------------------ ##
-def dfs(root):
-    dp[root][1] = w[root]
-    if root not in dic:
-        return
-    # 遍历每一个字节点
-    for son in dic[root]: 
-        dfs(son)
-        # 选取当前root节点，因此所有的儿子都不能选取
-        dp[root][1] += dp[son][0]
-        # 不选择当前的节点，儿子节点可选可不选
-        dp[root][0] += max(dp[son][0], dp[son][1])
-        
-dfs(root)
-print(max(dp[root]))
+```c++
+class Solution {
+public:
+    vector<int> dfs(TreeNode* root){
+        if(!root){
+            return {0,0};
+        }
+        // 如果是多叉树，需要迭代每个循环。
+        vector<int> r = dfs(root->right);
+        vector<int> l = dfs(root->left);
+        int robThis = l[1]+r[1]+root->val;
+        int notRobThis = max(r[0], r[1])+max(l[0],l[1]);
+        return {robThis, notRobThis};
+    }
 
+    int rob(TreeNode* root) {
+        vector<int> ans = dfs(root);
+        return max(ans[0],ans[1]);
+    }
+};
 ```
 ### 状态压缩DP（最短Hamilton路径，1723. 完成所有工作的最短时间, 1125. 最小的必要团队）
 核心是将多个并存的状态转换为二进制的思想。这个方法的特点在于数据量一般不能很大，因为最大就是31。否则枚举不开。并且这个问题的特点一般在于如何转移得到当前的状态。
@@ -303,6 +293,132 @@ print(max(dp[root]))
 回溯算法需要注意一点，**在dfs退出以后，记着恢复现场**。
 ## bfs（拓扑排序）
 bfs是我非常喜欢的一个算法，非常的清晰。使用的场合较多，**树的遍历，可行性的宽搜，以及典型的拓扑排序问题**，这个我会下面仔细分析下。
+
+### 平衡树+BFS
+[网格图中最少访问的格子数](https://leetcode.cn/problems/minimum-number-of-visited-cells-in-a-grid/)
+
+```c++
+class Solution {
+public:
+    int minimumVisitedCells(vector<vector<int>>& grid) {
+        // 朴素BFS，需要遍历到每一个点。并且需要维护一个visited标记已经被加入queue的点
+        // 我们希望可以得到一个更好的方案，可以直接得到还没被加入队列的点。
+        // 我们可以注意到，每次在进行bfs时，我们是将一个范围内的点都加入队列里。
+        // 1. 平衡树，可以得到符合范围的区间的第一个的iterator
+        // 2. 并查集，类似链表，每个点都指向自己的下一个可行节点。
+        int n = grid.size();
+        int m = grid[0].size();
+        if(n == 1 && m ==1)return 1;
+        vector<set<int>> row(n+1); // 每一个行都建立一个平衡树，得到这一行的点的访问情况。
+        vector<set<int>> col(m+1); // 每一个列都建立一个平衡树，得到这一列的点的访问情况。
+        // 初始平衡树。加入n.m比较越界
+        for(int i = 0;i<=n;i++){
+            for(int j = 0;j<=m;j++){
+                row[i].insert(j);
+                col[j].insert(i);
+            }
+        }
+
+        queue<pair<int, int>> q;
+        q.emplace(0,0);
+        int ans = 1;
+        while(!q.empty()){
+            ans++;
+            int size = q.size();
+            for (int i = 0;i<size;i++){
+                auto [x,y] = q.front();
+                
+                q.pop();
+                int step = grid[x][y];
+                int max_x = min(n-1, x+step);
+                int max_y = min(m-1, y+step);
+                // y
+                for(auto it = row[x].upper_bound(y); *it<= max_y; it = row[x].erase(it)){
+                    q.emplace(x, *it);
+                    if( x == n-1 && *it == m-1) return ans;
+                }
+                //x
+                for(auto it = col[y].upper_bound(x); *it<= max_x; it = col[y].erase(it)){
+                    q.emplace(*it, y);
+                    if( *it == n-1 && y == m-1) return ans;
+                }
+            }
+        }
+        return -1;
+
+    }
+};
+
+```
+### 并查集+BFS
+使用一个特殊的并查集。每个节点的初始父节点指向自己，被使用以后修改父节点指向到下一个节点。
+
+```c++
+class UF{
+private:
+    vector<int> fa;
+public:
+    UF(int n){
+        for(int i =0;i<n;i++) fa.push_back(i);
+    }
+
+    int find(int x){
+        if (fa[x] == x){
+            return x;
+        }
+        fa[x] = find(fa[x]);
+        return fa[x];
+    }
+
+    void merge(int x) {
+        fa[x] = x+1;
+    }
+};
+class Solution {
+  using Node = tuple<int, int, int>;
+  
+ public:
+  int minimumVisitedCells(vector<vector<int>>& grid) {
+    int n = grid.size();
+    int m = grid[0].size();
+
+    vector<UF> row_uf(n+1, UF(m+1));
+    vector<UF> col_uf(m+1, UF(n+1));
+
+    queue<Node> q;
+    q.emplace(1, 0, 0);
+    while (!q.empty()) {
+      auto [d, x, y] = q.front();
+      q.pop();
+      if (x == n - 1 && y == m - 1) {
+        return d;
+      }
+      
+      int g = grid[x][y];
+      
+      // right
+      UF &row = row_uf[x];
+      int right_bound = min(m, g + y + 1);
+      // 注意迭代方案，每次需要merge当前点，然后迭代到下一个坐标点
+      for (int p = row.find(y+1); p < right_bound; p = row.find(p+1)) {
+        q.emplace(d + 1, x, p);
+        row.merge(p);
+
+      }
+      
+      // down
+      UF &col = col_uf[y];
+      int down_bound = min(n, g + x + 1);
+      for (int p = col.find(x + 1); p < down_bound; p = col.find(p+1)) {
+        q.emplace(d + 1, p, y);
+        col.merge(p);
+      }
+    }
+    return -1;
+  }
+};
+
+```
 
 ## 图论
 ### 无向图（bfs，dfs）
