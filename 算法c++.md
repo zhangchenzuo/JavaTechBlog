@@ -549,88 +549,80 @@ public:
 ##### 存在负边
 可以使用Bellman-Ford算法，这个可以解决**限制了最多经过 K 条边到达 n 的最短路径问题**。需要注意，存在负权边时候，如果存在**负权重环**，可能无最短距离。如果第n次迭代，依然有更新最短边，说明存在一个至少为n+1的最短路径，存在负环。
 
-```python
-## bellman算法
-# 注意这里考虑的是有向边
-N,M = map(int, input().split())
-g = [[0,0]]
-for i in range(M):
-    a,b,c = map(int, input().split())
-    g.append([a,b,c])
-
-def bellman():
-    dis = [float('inf')]*(N+1)
-    dis[1] = 0
-    
-    for i in range(N):
-        backup = dis.copy() # 这里需要注意，进行了复制，防止迭代出现混乱
-        for j in range(M):
-            a,b,c = g[j]
-            dis[b] = min(backup[a]+c, dis[b])
-            
-    if dis[N] == float('inf'):
-        return 'impossible'
-    return dis[N]
-ans = bellman()
-print(ans)
-
-```
-
-另外还有，SPFA算法，使用了一个FIFO队列只存储了节点没有存储边的信息，并且使用了标识数组，如果是已经在队列里的将不会再次加入。可以检测负环。除了维护dis以外，还需要维护一个cnt，每次进行状态转移时候，cnt(next) = cnt(cur)+1，如果cnt>N表示存在负环。
-
-```java
-import java.util.*;
-public class Main{
-    static int INF = Integer.MAX_VALUE/2;
-    static int n;
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        n = sc.nextInt();
-        int m = sc.nextInt();
-        List<List<int[]>> graph = new ArrayList<>();
-        for(int i = 0;i<=n;i++ ){
-            graph.add(new ArrayList<int[]>());
-        }
-        while(sc.hasNext()){
-            int a = sc.nextInt();
-            int b = sc.nextInt();
-            int c = sc.nextInt();
-            graph.get(a).add(new int[]{b,c});
-        }
-        
-        int ans = SPFA(graph);
-        if (ans == INF)System.out.print("impossible");
-        else System.out.print(ans);
-    }
-    
-    private static int SPFA(List<List<int[]>> graph){
-        int[] dist = new int[n+1];
-        boolean[] st = new boolean[n+1];
-        Arrays.fill(dist, INF);
-        Queue<Integer> queue = new LinkedList<Integer>();
-        dist[1] = 0;
-        queue.add(1);
-        st[1] = true;//标记1号点在队列中
-        while(!queue.isEmpty()){
-            int t = queue.poll();
-            st[t] = false;
-            for(int[] cur:graph.get(t)){
-                int next = cur[0];
-                int w = cur[1];
-                if(dist[next] > dist[t] + w){
-                    dist[next] = dist[t] + w;
-                    //判断该点是否已经在队列中
-                    if(!st[next]){
-                        queue.add(next);
-                        st[next] = true; //标记已加入队列
-                    }
-                }
+```c++
+// bellman算法，注意这里考虑的是有向边
+class Solution {
+public:
+    vector<int> dis;
+    bool Bollman_ford(vector<vector<int>>& g, int E, int n) {
+        for (int i = 1; i < n; i++) {//n-1次循环
+            for (int j = 0; j < E; j++) {//处理全部E条边
+                /*松弛操作*/
+                if (dis[g[j][1]] > dis[g[j][0]] + g[j][2]) {
+                    dis[g[j][1]] = dis[g[j][0]] + g[j][2];
+                }                   
             }
         }
-        return dist[n];
-        
+        for (int i = 0; i < E; i++) {
+            if (dis[g[i][1]] > dis[g[i][0]] + g[i][2]) {
+                return false;//这种情况下即存在负权，当然本题无需考虑
+            }
+        }
+        return true;
     }
-}
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        dis.resize(n + 1, INT_MAX / 2);
+        dis[k] = 0, dis[0] = 0;//初始化操作
+        if (!Bollman_ford(times, times.size(), n))    return -1;
+        int ret = *max_element(dis.begin(), dis.end());
+        return ret == INT_MAX / 2 ? -1 : ret;
+    }
+};
+```
+
+另外还有，SPFA算法，使用了一个FIFO队列只存储了节点没有存储边的信息，并且使用了标识数组，如果是已经在队列里的将不会再次加入。
+
+该算法可以检测负环。除了维护dis以外，还需要维护一个cnt，每次进行状态转移时候，cnt(next) = cnt(cur)+1，如果cnt>N表示存在负环。
+
+```c++
+class Solution {
+public:
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        vector<vector<pair<int, int>>> graph(n);
+        for (auto &t: times){
+            graph[t[0]-1].emplace_back(t[1]-1, t[2]);
+        }
+
+        vector<int> dis(n, INT_MAX/2);
+        dis[k-1] = 0;
+
+        queue<int> q;
+        q.push(k-1);
+
+        unordered_set<int> set; // 是否在队列中
+        vector<int> cnt(n, 0); // 统计入列次数
+        cnt[k-1]++;
+        while(!q.empty()){
+            int cur = q.front();
+            q.pop();
+            set.erase(cur);
+            for (auto &p:graph[cur]){
+                int next = p.first;
+                int addDistance = p.second;
+                if(dis[next] > addDistance+dis[cur]){
+                    dis[next] = addDistance+dis[cur];
+                    if (set.count(next)) continue; // 如果已经在队伍里了，没必要再次加入了。
+                    q.push(next);
+                    set.insert(next);
+                    cnt[next]++;
+                    if(cnt[next] > n) return -1; // 此时存在负环
+                }
+            }
+        } 
+        int ans = *max_element(dis.begin(), dis.end());
+        return ans == INT_MAX/2 ? -1 : ans;
+    }
+};
 ```
 #### 多源汇最短路（Floyd）
 多个起点，多个终点。从x号点，到y号点的最短距离。是可以处理**重边，自环和负权边的**。但是因为研究的是最短路问题，因此不能出现负环。
