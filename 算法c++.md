@@ -430,134 +430,120 @@ class Solution {
 有向图是点之间存在依赖关系。还是采用bfs比较好解决。我们需要维护一个节点的入度，也就是看这个节点上有“几把锁”。在建图时候，我们维护一个依赖数组，key是父节点，val是子节点。然后在遍历时候，将入度为0的点加入队列，按照bfs依次解锁其他点即可。
 
 通用解法：维护一个入度数组indegree[], 邻接表graph[pre][cur]想要解锁cur，需要先学习pre。
+```c++
+class Solution {
+public:
+    bool canFinish(int numCourses, vector<vector<int>>& prerequisites) {
+        vector<int> indegree(numCourses, 0);
+        vector<vector<int>> graph(numCourses);
+        for (auto &pre: prerequisites){
+            graph[pre[1]].push_back(pre[0]);
+            indegree[pre[0]]++;
+        }
 
+        queue<int> q;
+        for(int i = 0;i<numCourses;i++){
+            if (indegree[i] == 0) q.push(i);
+        }
+        while(!q.empty()){
+            int cur = q.front();
+            q.pop();
+            numCourses--;
+            for(auto &need: graph[cur]){
+                if (--indegree[need] == 0) q.push(need);
+            }
+        }
+        return numCourses == 0;
+    }
+};
+
+```
 ### 最短路
 给定一幅图，求解点于点之间的最短距离。
+- [网络延迟时间](https://leetcode.cn/problems/network-delay-time/)
 #### 单源最短路
 从一号点到n号点的最短路径。点的个数是n，边的个数是m。
 ##### 边权为正（dijkstra）
 > 稠密图
 朴素的dijkstra算法适合稠密图，只与点的数量有关。O(n^2)。并且由于的稠密图，边比较多，建议**采用邻接矩阵的方法，存储点与点之间的最短距离。**
-```java
-import java.util.*;
-public class Main{
-    // ！！！！！！这里不可以是最大整数
-    static int INF = Integer.MAX_VALUE/2;
+```c++
+class Solution {
+public:
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        vector<vector<int>> dis(n+1,vector<int>(n+1, INT_MAX/2));
+        for (auto &t:times){
+            dis[t[0]][t[1]] = t[2];
+        }
 
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        int n = sc.nextInt();
-        int m = sc.nextInt();
-        int[][] dis = new int[n+1][n+1];
-        for(int i = 1; i<=n;i++){
-            Arrays.fill(dis[i], INF);
-        }
-        while(sc.hasNext()){
-            int a = sc.nextInt();
-            int b = sc.nextInt();
-            int c = sc.nextInt();
-            dis[a][b] = Math.min(dis[a][b],c);
-        }
-        int ans = dijkstra(dis);
-        if (ans == INF)System.out.println(-1);
-        else System.out.println(ans);
-        return;
-        
-    }
-    
-    private static int dijkstra(int[][] dis){
-        int n = dis.length;
-        HashSet<Integer> set = new HashSet<>();
-        int[] ans = new int[n];
-        Arrays.fill(ans, INF);
-        ans[1] = 0;
-        for (int i = 1; i<n;i++){
+        unordered_set<int> set;
+        vector<int> ans(n+1, INT_MAX/2);
+        ans[k] = 0;
+        // 每次添加一个边，n-1次完成
+        for (int i = 0;i<n;i++){
             int t = -1;
-            // 开始进行枚举 
-            // 找到没有被考虑过的点到当前点的最小距离。
-            for(int j = 1;j<n;j++){
-                if (!set.contains(j) && (t == -1 || ans[j]<ans[t])){
-                    t = j;
+            // 找到目前到t距离最小的点
+            for(int j = 1;j<=n;j++){
+                if ((!set.count(j)) && (t == -1 || ans[j]<ans[t])){
+                    t  = j;
                 }
             }
-            set.add(t);
-            // 全图更新
-            for(int j = 1;j<n;j++){
-                ans[j] = Math.min(ans[j], ans[t]+dis[t][j]);
+            for (int j = 1;j<=n;j++){
+                ans[j] = min(ans[j], ans[t]+dis[t][j]);
             }
+            set.insert(t);
         }
-        return ans[n-1];
-        
-    } 
-}
+        int res = *max_element(ans.begin(), ans.end());
+        if(res == INT_MAX/2)return -1;
+        return res;
+    }
+};
 ```
 > 稀疏图 点的数量大于边的数量。O(mlogn)。**采用邻接表的存储，点之间的距离。**
 
-```java
-import java.util.*;
-public class Main{
-    // 这里不可以是最大整数
-    static int n;
-    static int INF = Integer.MAX_VALUE/2;
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        n = sc.nextInt();
-        int m = sc.nextInt();
-        List<List<int[]>> dis = new ArrayList<>();
-        for (int i = 0;i<n+1;i++) dis.add(new ArrayList<int[]>());
-        while(sc.hasNext()){
-            int a = sc.nextInt();
-            int b = sc.nextInt();
-            int c = sc.nextInt();
-            dis.get(a).add(new int[]{b,c});
+```c++
+class Solution {
+public:
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        // 构建邻接表
+        vector<vector<pair<int, int>>> graph(n);
+        for (auto &t: times){
+            graph[t[0]-1].emplace_back(t[1]-1, t[2]);
         }
-        int ans = dijkstra(dis);
-        if (ans == INF)System.out.println(-1);
-        else System.out.println(ans);
-        return;
-        
-    }
-    
-    
-    private static int dijkstra(List<List<int[]>> dis){
-        int[] ans = new int[n+1];
-        Arrays.fill(ans, INF);
-        
-        HashSet<Integer> set = new HashSet<>();
-        
-        PriorityQueue<int[]> pq = new PriorityQueue<>(new Comparator<int[]>(){
-           //@Override
-           public int compare(int[] a, int[] b){
-               return a[1]-b[1];
-           }
-        });
-        
-        pq.offer(new int[]{1,0});
+        // 不断更新dis数组，刷新起点k到每个点的最短距离
+        vector<int> dis(n, INT_MAX/2);
+        dis[k-1] = 0; // 初始化k点距离为0
 
-        while(!pq.isEmpty()){
-            int[] now = pq.poll();
-            int cur = now[0];
-            int distance = now[1];
+        // 重写排序方案
+        auto cmp = [](const pair<int, int> &a, const pair<int, int> &b){
+            return a.second>b.second;
+        };
+        priority_queue<pair<int, int>, vector<pair<int, int>>, decltype(cmp)> pq(cmp);
+        pq.emplace(k-1, 0);
+
+        // 标记某个点是不是加入了
+        unordered_set<int> set;
+
+        while(!pq.empty()){
+            auto [cur, distance] = pq.top();
+            pq.pop();
             
-            if (set.contains(cur)) continue;
-            
-            set.add(cur);
-            ans[cur] = distance;
-            
-            for(int[] next:dis.get(cur)){
-                if (set.contains(next[0])) continue;
-                if (distance+next[1]<ans[next[0]]){
-                    pq.offer(new int[]{next[0], distance+next[1]});
-                    ans[next[0]] = distance+next[1];
+            if(set.count(cur)) continue;
+            set.insert(cur);
+
+            for (auto &p:graph[cur]){
+                int next = p.first;
+                int addDistance = p.second;
+                if (set.count(next)) continue;
+                if(dis[next] > addDistance+distance){
+                    dis[next] = addDistance+distance;
+                    pq.emplace(next, dis[next]);
                 }
             }
-        }
-        
-        
-        return ans[n];
-        
-    } 
-}
+        } 
+        int ans = *max_element(dis.begin(), dis.end());
+        return ans == INT_MAX/2 ? -1 : ans;
+    }
+};
 ```
 
 ##### 存在负边
@@ -1648,6 +1634,19 @@ Collections.sort(list, (a, b)->{
     if (a[1] != b[1]) return a[1] - b[1];
     return a[2] - b[2];
 });
+
+```
+
+```c++
+// 如果cmp返回true，进行交换。 因此是大的在前。
+auto cmp = [](const vector<int> &a, const vector<int> &b){
+    return a[0]<b[0];
+};
+
+priority_queue<vector<int>, vector<vector<int,int>>, decltype(cmp)> p(cmp);
+
+sort(sql.begin(), sql.end(), cmp);
+
 
 ```
 ## 最大公约数
