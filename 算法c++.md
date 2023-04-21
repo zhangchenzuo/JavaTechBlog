@@ -629,34 +629,32 @@ public:
 
 注意这个方法一定是枚举顺序，k，i，j。存储用邻接矩阵
 
-```python
-# N,M,Q分别为点的个数，边的个数，和查询的个数
-# 注意这里考虑的是有向边
-N,M,Q = map(int, input().split())
-# 采用邻接矩阵进行存储
-dis = [[float('inf')]*(N+1) for _ in range(N+1)]
+```c++
+class Solution {
+public:
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        vector<vector<int>> dp(n, vector<int>(n, INT_MAX/2));
+        for(auto &t: times){
+            dp[t[0]-1][t[1]-1] = t[2];
+        }
+        for(int i = 0;i<n;i++){
+            dp[i][i] = 0;
+        }
 
-for i in range(1,N+1):
-    dis[i][i] = 0   
-for i in range(M):
-    a,b,c = map(int, input().split())
-    dis[a][b] = min(dis[a][b], c)
-
-def Foldy():
-    for k in range(1, N+1):
-        for i in range(1,N+1):
-            for j in range(1, N+1):
-                dis[i][j] = min(dis[i][j], dis[i][k]+dis[k][j])
-    return 
-    
-Foldy()
-for i in range(Q):
-    a,b = map(int, input().split())
-    if dis[a][b] == float('inf'):
-        print(-1)
-    else:
-        print(dis[a][b])
-
+        for(int k = 0;k<n;k++){
+            for (int i = 0;i<n;i++){
+                for (int j = 0;j<n;j++){
+                    dp[i][j] = min(dp[i][j], dp[i][k]+dp[k][j]);
+                }
+            }
+        }
+        int ans = 0;
+        for (int i = 0;i<n;i++){
+            ans = max(ans, dp[k-1][i]);
+        }
+        return ans == INT_MAX/2 ? -1 : ans;
+    }
+};
 ```
 ### 最小生成树（prim，Kruskal）
 https://leetcode.cn/problems/min-cost-to-connect-all-points/
