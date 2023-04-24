@@ -457,255 +457,231 @@ class Solution {
 有向图是点之间存在依赖关系。还是采用bfs比较好解决。我们需要维护一个节点的入度，也就是看这个节点上有“几把锁”。在建图时候，我们维护一个依赖数组，key是父节点，val是子节点。然后在遍历时候，将入度为0的点加入队列，按照bfs依次解锁其他点即可。
 
 通用解法：维护一个入度数组indegree[], 邻接表graph[pre][cur]想要解锁cur，需要先学习pre。
+```c++
+class Solution {
+public:
+    bool canFinish(int numCourses, vector<vector<int>>& prerequisites) {
+        vector<int> indegree(numCourses, 0);
+        vector<vector<int>> graph(numCourses);
+        for (auto &pre: prerequisites){
+            graph[pre[1]].push_back(pre[0]);
+            indegree[pre[0]]++;
+        }
 
+        queue<int> q;
+        for(int i = 0;i<numCourses;i++){
+            if (indegree[i] == 0) q.push(i);
+        }
+        while(!q.empty()){
+            int cur = q.front();
+            q.pop();
+            numCourses--;
+            for(auto &need: graph[cur]){
+                if (--indegree[need] == 0) q.push(need);
+            }
+        }
+        return numCourses == 0;
+    }
+};
+
+```
 ### 最短路
 给定一幅图，求解点于点之间的最短距离。
+- [网络延迟时间](https://leetcode.cn/problems/network-delay-time/)
 #### 单源最短路
 从一号点到n号点的最短路径。点的个数是n，边的个数是m。
 ##### 边权为正（dijkstra）
 > 稠密图
 朴素的dijkstra算法适合稠密图，只与点的数量有关。O(n^2)。并且由于的稠密图，边比较多，建议**采用邻接矩阵的方法，存储点与点之间的最短距离。**
-```java
-import java.util.*;
-public class Main{
-    // ！！！！！！这里不可以是最大整数
-    static int INF = Integer.MAX_VALUE/2;
+```c++
+class Solution {
+public:
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        vector<vector<int>> dis(n+1,vector<int>(n+1, INT_MAX/2));
+        for (auto &t:times){
+            dis[t[0]][t[1]] = t[2];
+        }
 
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        int n = sc.nextInt();
-        int m = sc.nextInt();
-        int[][] dis = new int[n+1][n+1];
-        for(int i = 1; i<=n;i++){
-            Arrays.fill(dis[i], INF);
-        }
-        while(sc.hasNext()){
-            int a = sc.nextInt();
-            int b = sc.nextInt();
-            int c = sc.nextInt();
-            dis[a][b] = Math.min(dis[a][b],c);
-        }
-        int ans = dijkstra(dis);
-        if (ans == INF)System.out.println(-1);
-        else System.out.println(ans);
-        return;
-        
-    }
-    
-    private static int dijkstra(int[][] dis){
-        int n = dis.length;
-        HashSet<Integer> set = new HashSet<>();
-        int[] ans = new int[n];
-        Arrays.fill(ans, INF);
-        ans[1] = 0;
-        for (int i = 1; i<n;i++){
+        unordered_set<int> set;
+        vector<int> ans(n+1, INT_MAX/2);
+        ans[k] = 0;
+        // 每次添加一个边，n-1次完成
+        for (int i = 0;i<n;i++){
             int t = -1;
-            // 开始进行枚举 
-            // 找到没有被考虑过的点到当前点的最小距离。
-            for(int j = 1;j<n;j++){
-                if (!set.contains(j) && (t == -1 || ans[j]<ans[t])){
-                    t = j;
+            // 找到目前到t距离最小的点
+            for(int j = 1;j<=n;j++){
+                if ((!set.count(j)) && (t == -1 || ans[j]<ans[t])){
+                    t  = j;
                 }
             }
-            set.add(t);
-            // 全图更新
-            for(int j = 1;j<n;j++){
-                ans[j] = Math.min(ans[j], ans[t]+dis[t][j]);
+            for (int j = 1;j<=n;j++){
+                ans[j] = min(ans[j], ans[t]+dis[t][j]);
             }
+            set.insert(t);
         }
-        return ans[n-1];
-        
-    } 
-}
+        int res = *max_element(ans.begin(), ans.end());
+        if(res == INT_MAX/2)return -1;
+        return res;
+    }
+};
 ```
 > 稀疏图 点的数量大于边的数量。O(mlogn)。**采用邻接表的存储，点之间的距离。**
 
-```java
-import java.util.*;
-public class Main{
-    // 这里不可以是最大整数
-    static int n;
-    static int INF = Integer.MAX_VALUE/2;
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        n = sc.nextInt();
-        int m = sc.nextInt();
-        List<List<int[]>> dis = new ArrayList<>();
-        for (int i = 0;i<n+1;i++) dis.add(new ArrayList<int[]>());
-        while(sc.hasNext()){
-            int a = sc.nextInt();
-            int b = sc.nextInt();
-            int c = sc.nextInt();
-            dis.get(a).add(new int[]{b,c});
+```c++
+class Solution {
+public:
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        // 构建邻接表
+        vector<vector<pair<int, int>>> graph(n);
+        for (auto &t: times){
+            graph[t[0]-1].emplace_back(t[1]-1, t[2]);
         }
-        int ans = dijkstra(dis);
-        if (ans == INF)System.out.println(-1);
-        else System.out.println(ans);
-        return;
-        
-    }
-    
-    
-    private static int dijkstra(List<List<int[]>> dis){
-        int[] ans = new int[n+1];
-        Arrays.fill(ans, INF);
-        
-        HashSet<Integer> set = new HashSet<>();
-        
-        PriorityQueue<int[]> pq = new PriorityQueue<>(new Comparator<int[]>(){
-           //@Override
-           public int compare(int[] a, int[] b){
-               return a[1]-b[1];
-           }
-        });
-        
-        pq.offer(new int[]{1,0});
+        // 不断更新dis数组，刷新起点k到每个点的最短距离
+        vector<int> dis(n, INT_MAX/2);
+        dis[k-1] = 0; // 初始化k点距离为0
 
-        while(!pq.isEmpty()){
-            int[] now = pq.poll();
-            int cur = now[0];
-            int distance = now[1];
+        // 重写排序方案
+        auto cmp = [](const pair<int, int> &a, const pair<int, int> &b){
+            return a.second>b.second;
+        };
+        priority_queue<pair<int, int>, vector<pair<int, int>>, decltype(cmp)> pq(cmp);
+        pq.emplace(k-1, 0);
+
+        // 标记某个点是不是加入了
+        unordered_set<int> set;
+
+        while(!pq.empty()){
+            auto [cur, distance] = pq.top();
+            pq.pop();
             
-            if (set.contains(cur)) continue;
-            
-            set.add(cur);
-            ans[cur] = distance;
-            
-            for(int[] next:dis.get(cur)){
-                if (set.contains(next[0])) continue;
-                if (distance+next[1]<ans[next[0]]){
-                    pq.offer(new int[]{next[0], distance+next[1]});
-                    ans[next[0]] = distance+next[1];
+            if(set.count(cur)) continue;
+            set.insert(cur);
+
+            for (auto &p:graph[cur]){
+                int next = p.first;
+                int addDistance = p.second;
+                if (set.count(next)) continue;
+                if(dis[next] > addDistance+distance){
+                    dis[next] = addDistance+distance;
+                    pq.emplace(next, dis[next]);
                 }
             }
-        }
-        
-        
-        return ans[n];
-        
-    } 
-}
+        } 
+        int ans = *max_element(dis.begin(), dis.end());
+        return ans == INT_MAX/2 ? -1 : ans;
+    }
+};
 ```
 
 ##### 存在负边
 可以使用Bellman-Ford算法，这个可以解决**限制了最多经过 K 条边到达 n 的最短路径问题**。需要注意，存在负权边时候，如果存在**负权重环**，可能无最短距离。如果第n次迭代，依然有更新最短边，说明存在一个至少为n+1的最短路径，存在负环。
 
-```python
-## bellman算法
-# 注意这里考虑的是有向边
-N,M = map(int, input().split())
-g = [[0,0]]
-for i in range(M):
-    a,b,c = map(int, input().split())
-    g.append([a,b,c])
-
-def bellman():
-    dis = [float('inf')]*(N+1)
-    dis[1] = 0
-    
-    for i in range(N):
-        backup = dis.copy() # 这里需要注意，进行了复制，防止迭代出现混乱
-        for j in range(M):
-            a,b,c = g[j]
-            dis[b] = min(backup[a]+c, dis[b])
-            
-    if dis[N] == float('inf'):
-        return 'impossible'
-    return dis[N]
-ans = bellman()
-print(ans)
-
-```
-
-另外还有，SPFA算法，使用了一个FIFO队列只存储了节点没有存储边的信息，并且使用了标识数组，如果是已经在队列里的将不会再次加入。可以检测负环。除了维护dis以外，还需要维护一个cnt，每次进行状态转移时候，cnt(next) = cnt(cur)+1，如果cnt>N表示存在负环。
-
-```java
-import java.util.*;
-public class Main{
-    static int INF = Integer.MAX_VALUE/2;
-    static int n;
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        n = sc.nextInt();
-        int m = sc.nextInt();
-        List<List<int[]>> graph = new ArrayList<>();
-        for(int i = 0;i<=n;i++ ){
-            graph.add(new ArrayList<int[]>());
-        }
-        while(sc.hasNext()){
-            int a = sc.nextInt();
-            int b = sc.nextInt();
-            int c = sc.nextInt();
-            graph.get(a).add(new int[]{b,c});
-        }
-        
-        int ans = SPFA(graph);
-        if (ans == INF)System.out.print("impossible");
-        else System.out.print(ans);
-    }
-    
-    private static int SPFA(List<List<int[]>> graph){
-        int[] dist = new int[n+1];
-        boolean[] st = new boolean[n+1];
-        Arrays.fill(dist, INF);
-        Queue<Integer> queue = new LinkedList<Integer>();
-        dist[1] = 0;
-        queue.add(1);
-        st[1] = true;//标记1号点在队列中
-        while(!queue.isEmpty()){
-            int t = queue.poll();
-            st[t] = false;
-            for(int[] cur:graph.get(t)){
-                int next = cur[0];
-                int w = cur[1];
-                if(dist[next] > dist[t] + w){
-                    dist[next] = dist[t] + w;
-                    //判断该点是否已经在队列中
-                    if(!st[next]){
-                        queue.add(next);
-                        st[next] = true; //标记已加入队列
-                    }
-                }
+```c++
+// bellman算法，注意这里考虑的是有向边
+class Solution {
+public:
+    vector<int> dis;
+    bool Bollman_ford(vector<vector<int>>& g, int E, int n) {
+        for (int i = 1; i < n; i++) {//n-1次循环
+            for (int j = 0; j < E; j++) {//处理全部E条边
+                /*松弛操作*/
+                if (dis[g[j][1]] > dis[g[j][0]] + g[j][2]) {
+                    dis[g[j][1]] = dis[g[j][0]] + g[j][2];
+                }                   
             }
         }
-        return dist[n];
-        
+        for (int i = 0; i < E; i++) {
+            if (dis[g[i][1]] > dis[g[i][0]] + g[i][2]) {
+                return false;//这种情况下即存在负权，当然本题无需考虑
+            }
+        }
+        return true;
     }
-}
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        dis.resize(n + 1, INT_MAX / 2);
+        dis[k] = 0, dis[0] = 0;//初始化操作
+        if (!Bollman_ford(times, times.size(), n))    return -1;
+        int ret = *max_element(dis.begin(), dis.end());
+        return ret == INT_MAX / 2 ? -1 : ret;
+    }
+};
+```
+
+另外还有，SPFA算法，使用了一个FIFO队列只存储了节点没有存储边的信息，并且使用了标识数组，如果是已经在队列里的将不会再次加入。
+
+该算法可以检测负环。除了维护dis以外，还需要维护一个cnt，每次进行状态转移时候，cnt(next) = cnt(cur)+1，如果cnt>N表示存在负环。
+
+```c++
+class Solution {
+public:
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        vector<vector<pair<int, int>>> graph(n);
+        for (auto &t: times){
+            graph[t[0]-1].emplace_back(t[1]-1, t[2]);
+        }
+
+        vector<int> dis(n, INT_MAX/2);
+        dis[k-1] = 0;
+
+        queue<int> q;
+        q.push(k-1);
+
+        unordered_set<int> set; // 是否在队列中
+        vector<int> cnt(n, 0); // 统计入列次数
+        cnt[k-1]++;
+        while(!q.empty()){
+            int cur = q.front();
+            q.pop();
+            set.erase(cur);
+            for (auto &p:graph[cur]){
+                int next = p.first;
+                int addDistance = p.second;
+                if(dis[next] > addDistance+dis[cur]){
+                    dis[next] = addDistance+dis[cur];
+                    if (set.count(next)) continue; // 如果已经在队伍里了，没必要再次加入了。
+                    q.push(next);
+                    set.insert(next);
+                    cnt[next]++;
+                    if(cnt[next] > n) return -1; // 此时存在负环
+                }
+            }
+        } 
+        int ans = *max_element(dis.begin(), dis.end());
+        return ans == INT_MAX/2 ? -1 : ans;
+    }
+};
 ```
 #### 多源汇最短路（Floyd）
 多个起点，多个终点。从x号点，到y号点的最短距离。是可以处理**重边，自环和负权边的**。但是因为研究的是最短路问题，因此不能出现负环。
 
 注意这个方法一定是枚举顺序，k，i，j。存储用邻接矩阵
 
-```python
-# N,M,Q分别为点的个数，边的个数，和查询的个数
-# 注意这里考虑的是有向边
-N,M,Q = map(int, input().split())
-# 采用邻接矩阵进行存储
-dis = [[float('inf')]*(N+1) for _ in range(N+1)]
+```c++
+class Solution {
+public:
+    int networkDelayTime(vector<vector<int>>& times, int n, int k) {
+        vector<vector<int>> dp(n, vector<int>(n, INT_MAX/2));
+        for(auto &t: times){
+            dp[t[0]-1][t[1]-1] = t[2];
+        }
+        for(int i = 0;i<n;i++){
+            dp[i][i] = 0;
+        }
 
-for i in range(1,N+1):
-    dis[i][i] = 0   
-for i in range(M):
-    a,b,c = map(int, input().split())
-    dis[a][b] = min(dis[a][b], c)
-
-def Foldy():
-    for k in range(1, N+1):
-        for i in range(1,N+1):
-            for j in range(1, N+1):
-                dis[i][j] = min(dis[i][j], dis[i][k]+dis[k][j])
-    return 
-    
-Foldy()
-for i in range(Q):
-    a,b = map(int, input().split())
-    if dis[a][b] == float('inf'):
-        print(-1)
-    else:
-        print(dis[a][b])
-
+        for(int k = 0;k<n;k++){
+            for (int i = 0;i<n;i++){
+                for (int j = 0;j<n;j++){
+                    dp[i][j] = min(dp[i][j], dp[i][k]+dp[k][j]);
+                }
+            }
+        }
+        int ans = 0;
+        for (int i = 0;i<n;i++){
+            ans = max(ans, dp[k-1][i]);
+        }
+        return ans == INT_MAX/2 ? -1 : ans;
+    }
+};
 ```
 ### 最小生成树（prim，Kruskal）
 https://leetcode.cn/problems/min-cost-to-connect-all-points/
@@ -1675,6 +1651,19 @@ Collections.sort(list, (a, b)->{
     if (a[1] != b[1]) return a[1] - b[1];
     return a[2] - b[2];
 });
+
+```
+
+```c++
+// 如果cmp返回true，进行交换。 因此是大的在前。
+auto cmp = [](const vector<int> &a, const vector<int> &b){
+    return a[0]<b[0];
+};
+
+priority_queue<vector<int>, vector<vector<int,int>>, decltype(cmp)> p(cmp);
+
+sort(sql.begin(), sql.end(), cmp);
+
 
 ```
 ## 最大公约数
