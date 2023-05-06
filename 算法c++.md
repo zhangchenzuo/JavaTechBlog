@@ -6,7 +6,7 @@
     - [线性dp（字符串编辑距离）](#线性dp字符串编辑距离)
     - [区间dp（合并石子，最长回文子序列）](#区间dp合并石子最长回文子序列)
     - [树形DP(打家劫舍III，没有上司的舞会 )](#树形dp打家劫舍iii没有上司的舞会-)
-    - [状态压缩DP（最短Hamilton路径，完成所有工作的最短时间,最小的必要团队）](#状态压缩dp最短hamilton路径完成所有工作的最短时间最小的必要团队)
+    - [状态压缩DP（最短Hamilton路径,完成所有工作的最短时间,最小的必要团队）](#状态压缩dp最短hamilton路径完成所有工作的最短时间最小的必要团队)
     - [数位DP](#数位dp)
   - [dfs（回溯）](#dfs回溯)
   - [bfs（拓扑排序）](#bfs拓扑排序)
@@ -270,15 +270,44 @@ public:
     }
 };
 ```
+
 ### 状态压缩DP（最短Hamilton路径，完成所有工作的最短时间,最小的必要团队）
+
 核心是将多个并存的状态转换为二进制的思想。这个方法的特点在于数据量一般不能很大，因为最大就是31。否则枚举不开。并且这个问题的特点一般在于如何转移得到当前的状态。
 
-两类方法比较多，一个是子集枚举，`for(int p = i; i>0;p = (p-1)&i)`；对于状态为 i 的情况，拆分成 p + （i-p）的情况，将拆出来的 p 独立计算. $dp[i] = dp[i-p]+cal(p)$
+两类方法比较多，
+- 子集枚举，`for(int p = i; p>0;p = (p-1)&i)`；对于状态为 i 的情况，拆分成 p + （i-p）的情况，将拆出来的 p 独立计算. $dp[i] = dp[i-p]+cal(p)$
 
-另外一个思路是，枚举某个位置的转移`dp[i +(1<<j)]`。一般都是二维的DP。
+- 枚举某个位置的转移`dp[i +(1<<j)]`。一般都是二维的DP。
+  
+[完成所有工作的最短时间](https://leetcode.cn/problems/find-minimum-time-to-finish-all-jobs/)
 
 [统计子树中城市之间最大距离](https://leetcode-cn.com/problems/count-subtrees-with-max-distance-between-cities/submissions/)
 
+[最小的必要团队](https://leetcode.cn/problems/find-minimum-time-to-finish-all-jobs/)
+
+[最短Hamilton路径](https://www.acwing.com/problem/content/93/)
+```c++
+const int N=20,M=1<<N;
+
+int f[M][N],w[N][N];//w表示的是无权图
+
+memset(f,0x3f,sizeof(f));//因为要求最小值，所以初始化为无穷大
+f[1][0]=0;//因为零是起点,所以f[1][0]=0;
+
+for(int i=0;i<1<<n;i++){//i表示所有的情况
+    for(int j=0;j<n;j++){//j表示走到哪一个点
+        if((i>>j) & 1){
+            for(int k=0;k<n;k++){//k表示走到j这个点之前,以k为终点的最短距离
+                if((i>>k) & 1){//更新最短距离
+                    f[i][j]=min(f[i][j],f[i-(1<<j)][k]+w[k][j]);
+                }
+            }
+        }
+    }
+}
+return f[(1<<n)-1][n-1];
+```
 ### 数位DP
 这个Dp思路我感觉更为少见，一般就是求一个方案的方案数。比如整数拆分问题，求解N=n1+n2+n3...的拆分数量。核心思想是知道树的搜索思路。典型题目 [不含连续1的非负整数](https://leetcode-cn.com/problems/non-negative-integers-without-consecutive-ones/)
 
