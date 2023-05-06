@@ -6,7 +6,7 @@
     - [线性dp（字符串编辑距离）](#线性dp字符串编辑距离)
     - [区间dp（合并石子，最长回文子序列）](#区间dp合并石子最长回文子序列)
     - [树形DP(打家劫舍III，没有上司的舞会 )](#树形dp打家劫舍iii没有上司的舞会-)
-    - [状态压缩DP（最短Hamilton路径，1723. 完成所有工作的最短时间, 1125. 最小的必要团队）](#状态压缩dp最短hamilton路径1723-完成所有工作的最短时间-1125-最小的必要团队)
+    - [状态压缩DP（最短Hamilton路径，完成所有工作的最短时间,最小的必要团队）](#状态压缩dp最短hamilton路径完成所有工作的最短时间最小的必要团队)
     - [数位DP](#数位dp)
   - [dfs（回溯）](#dfs回溯)
   - [bfs（拓扑排序）](#bfs拓扑排序)
@@ -206,7 +206,7 @@ class Solution {
                     // 如果正好匹配，最佳情况一定是匹配
                     dp[i][j] = dp[i-1][j-1];  
                 }else{
-                    // 否则是三个操作之一，word1替换 dp[i-1][j-1], 删除dp[i-1][j], 插入dp[i][j-1]
+                    // 否则是三个操作之一，word1变换成word2 替换dp[i-1][j-1], 删除dp[i-1][j], 插入dp[i][j-1]
                     dp[i][j] = min(min(dp[i-1][j], dp[i][j-1]), dp[i-1][j-1])+1;
                 }
             }
@@ -270,7 +270,7 @@ public:
     }
 };
 ```
-### 状态压缩DP（最短Hamilton路径，1723. 完成所有工作的最短时间, 1125. 最小的必要团队）
+### 状态压缩DP（最短Hamilton路径，完成所有工作的最短时间,最小的必要团队）
 核心是将多个并存的状态转换为二进制的思想。这个方法的特点在于数据量一般不能很大，因为最大就是31。否则枚举不开。并且这个问题的特点一般在于如何转移得到当前的状态。
 
 两类方法比较多，一个是子集枚举，`for(int p = i; i>0;p = (p-1)&i)`；对于状态为 i 的情况，拆分成 p + （i-p）的情况，将拆出来的 p 独立计算. $dp[i] = dp[i-p]+cal(p)$
@@ -1634,8 +1634,12 @@ auto cmp = [](const vector<int> &a, const vector<int> &b){
 };
 
 priority_queue<vector<int>, vector<vector<int,int>>, decltype(cmp)> p(cmp);
+priority_queue<int, vector<int>, less<int>>  pq; // 得到的是大顶堆，top是最大的
+priority_queue<int, vector<int>, greater<int>> pq; // 得到的是小顶堆，top是最小的
 
+// sort函数是相反的，得到的是小的在前。
 sort(sql.begin(), sql.end(), cmp);
+
 
 
 ```
