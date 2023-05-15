@@ -1363,11 +1363,18 @@ public static class RangeTree {
 
 # 输入输出
 对于面试问题需要有一个规范的输入输出模板。以下格式需要熟记。
-```java
-import java.util.*;
-public class Main{
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
+```cpp
+#include <iostream>
+using namespace std;
+
+int main() {
+    int a,sum;
+    while(cin>>a) {
+        sum = sum+a;
+        if(cin.get()=='\n') {  // 如果没有给定数量，就需要用换行符分割
+            cout<<sum<<endl;
+            sum = 0;
+        } 
     }
 }
 
@@ -1375,20 +1382,18 @@ public class Main{
 
 
 需要注意输入的格式，有没有给定每行的个数。如果没有的话就需要当成字符串处理。
-```java
-import java.util.*;
-public class Main{
-    public static void main(String[] args){
-        Scanner sc = new Scanner(System.in);
-        while(sc.hasNext()){
-            String[] a = sc.nextLine().split(" ");
-            int len = a.length;
-            int ans = 0;
-            for(int i = 0; i<len;i++){
-                ans += Integer.valueOf(a[i]);
-            }
-            System.out.println(ans);
-        }
+```cpp
+int main(){
+    string s;
+    vector<string> m;
+    while(cin>>s){
+        stringstream ss(s);
+        // 根据','进行分割
+        while(getline(ss,s,',')) m.push_back(s);
+        sort(m.begin(),m.end());
+        for(int i=0;i<m.size()-1;i++) cout<<m[i]<<",";
+        cout<<m.back()<<endl;
+        m.clear();
     }
 }
 ```
