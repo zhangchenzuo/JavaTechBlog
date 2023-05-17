@@ -1,7 +1,7 @@
 - [算法思想](#算法思想)
   - [二分](#二分)
     - [STL 二分库函数](#stl-二分库函数)
-  - [前缀和与差分](#前缀和与差分)
+  - [前缀和，后缀和与差分](#前缀和后缀和与差分)
   - [dp](#dp)
     - [线性dp（字符串编辑距离）](#线性dp字符串编辑距离)
     - [区间dp（合并石子，最长回文子序列）](#区间dp合并石子最长回文子序列)
@@ -21,7 +21,9 @@
         - [存在负边](#存在负边)
       - [多源汇最短路（Floyd）](#多源汇最短路floyd)
     - [最小生成树（prim，Kruskal）](#最小生成树primkruskal)
-    - [二分图（染色，匈牙利算法）](#二分图染色匈牙利算法)
+    - [二分图问题](#二分图问题)
+      - [二分图判断（染色法）](#二分图判断染色法)
+      - [二分图的最大匹配数量 （匈牙利算法）](#二分图的最大匹配数量-匈牙利算法)
   - [数学](#数学)
     - [快速幂](#快速幂)
     - [组合数](#组合数)
@@ -37,7 +39,6 @@
   - [树状数组](#树状数组)
   - [线段树](#线段树)
 - [输入输出](#输入输出)
-  - [更快的输入输出](#更快的输入输出)
 - [典型问题](#典型问题)
   - [背包问题](#背包问题)
     - [01背包](#01背包)
@@ -121,10 +122,10 @@ public:
     cout << upper_bound(nums.begin(), nums.end(), 4)-1-nums.begin() << endl; // nums[3] = 4 第一个小于等于target的数值，但是不是最靠前的
 ```
 
-## 前缀和与差分
+## 前缀和，后缀和与差分
 前缀和的思路往往还是在代码中部分被使用。一般是通过预处理出来前缀和的方法，实现降低复杂度的目的。
 [2602. 使数组元素全部相等的最少操作次数](https://leetcode.cn/problems/minimum-operations-to-make-all-array-elements-equal/)
-```c++
+```cpp
 int n = nums.size();
 vector<int> presum(n+1, 0);
 for(int i = 0;i<n;i++){
@@ -132,30 +133,52 @@ for(int i = 0;i<n;i++){
 }
 ```
 
+[238. 除自身以外数组的乘积](https://leetcode.cn/problems/product-of-array-except-self/)  利用前缀和后缀，独立出来nums[i]的处理
+
+```cpp
+class Solution {
+public:
+    vector<int> productExceptSelf(vector<int>& nums) {
+        int n = nums.size();
+        vector<int> pre(n, 1);
+        for (int i = 1;i<n;i++){ // 前缀，pre[i]表示不包含nums[i]的情况
+            pre[i] = nums[i-1]*pre[i-1];
+        }
+        vector<int> back(n, 1);
+        for(int i = n-2;i>=0;i--){ // 后缀，back[i]表示不包含nums[i]的情况
+            back[i] = back[i+1]*nums[i+1]; 
+        }
+
+        vector<int> ans(n,1);
+        for (int i = 0;i<n;i++){
+            ans[i] = pre[i]*back[i];
+        }
+        return ans;
+    }
+};
+``
+
 
 差分的主要思路是**利用差分统计区间的覆盖频次问题**。维护了一个差分数组，对于每次的覆盖区间，**区间头位置+1，区间结尾+1的位置-1**。最后在进行累加，这样数组每个位置就对应了相应位置的频次。
-[1893. 检查是否区域内所有整数都被覆盖](https://leetcode-cn.com/problems/check-if-all-the-integers-in-a-range-are-covered/)
-```java
-//ranges = [[1,2],[3,4],[5,6]], left = 2, right = 5
-class Solution {
-    public boolean isCovered(int[][] ranges, int left, int right) {
-        int[] diff = new int[52];   // 差分数组
-        for (int[] range : ranges) {
-            ++diff[range[0]];
-            --diff[range[1] + 1];
-        }
-        // 前缀和
-        int curr = 0;
-        for (int i = 1; i <= 50; ++i) {
-            curr += diff[i];
-            if (left <= i && i <= right && curr <= 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-}
 
+[1893. 检查是否区域内所有整数都被覆盖](https://leetcode-cn.com/problems/check-if-all-the-integers-in-a-range-are-covered/)
+```cpp
+//ranges = [[1,2],[3,4],[5,6]], left = 2, right = 5
+bool isCovered(vector<vector<int>>& ranges, int left, int right) {
+    vector<int> nums(52,0); // 差分数组
+    for (auto &r:ranges){
+        nums[r[0]]++;
+        nums[r[1]+1]--;
+    }
+    int base = 0;
+    for (int i = 0;i<51;i++){
+        base += nums[i]; // 前缀和
+        if(left<=i && i<=right && base<=0){
+            return false;
+        }
+    }
+    return true;
+}
 ```
 
 差分数组更新的信息也都是区间信息，但是我们只需要进行单点查询。这一个是与树状数组和线段树不太一样的一点。
@@ -777,58 +800,102 @@ public:
     }
 };
 ```
-### 二分图（染色，匈牙利算法）
+### 二分图问题
+#### 二分图判断（染色法）
 二分图的判断：**当且仅当图中不存在奇数环**。其余的都可以染色的方法实现二分。
 
 染色法的思路很简单，BFS的方法，最外面一个循环，如果没染色就染白色，然后放入FIFO队列，邻接的都是黑色的。如果不出现矛盾就是成功的。
 
+判断二分图 [785. 判断二分图](https://leetcode.cn/problems/is-graph-bipartite/)
+
+```cpp
+// 染色法判断二分图
+    bool isBipartite(vector<vector<int>>& graph) {
+        int n = graph.size();
+        vector<int> vis(n, 0); // 0表示没有颜色，1，-1是两种颜色
+        queue<int> q;
+        for (int i = 0;i<n;i++){
+            if (vis[i] != 0) continue;
+            q.push(i);
+            vis[i] = 1;
+            while(!q.empty()){
+                int cur = q.front(); q.pop();
+                for(auto x:graph[cur]){
+                    if (vis[x] == vis[cur]) return false;
+                    if (vis[x] == 0){
+                        vis[x] = -vis[cur];
+                        q.push(x);
+                    }
+                }
+            }
+
+        }
+        return true;
+    }
+```
+
+#### 二分图的最大匹配数量 （匈牙利算法）
 匈牙利算法目的，在两个集合中，**寻找到数量最多的一一匹配**。考虑男生与女生配对的问题，依次考虑每个男生，去匹配每个女生，并考虑冲突的女生配对的男生是否存在别的可能。
-```python
-# 匈牙利算法，求解左右两个图的最大匹配度
-# 输入a,b,c，分别是左半侧，右半侧的点和边的数量
-n1, n2, m = map(int, input().split())
-g = [[]for _ in range(n1+1)] # 只需要存储左边指向右边的边的个数
-for _ in range(m):
-    a,b = map(int, input().split())
-    g[a].append(b)
 
-has = set()  
-# 存储当前girl已经匹配的对象
-match = [-1]*(n2+1)
+寻找到一条增广路径
+```cpp
+unordered_set<int> has;
+vector<vector<int>> g;
+vector<int> match;
 
-def find(x):
-    for c in g[x]: # 枚举目前的男生可以选择的全部女生
-        if c not in has: # 每个女生只考虑一次，防止嵌套
-            has.add(c)
-            if match[c] == -1 or find(match[c]): # 如果当前女生还未被匹配，或匹配的男生可以修改
-                match[c] = x
-                return True
-    return False # 只有一切可能都不行才返回False
-            
-res = 0
-for i in range(1,n1+1):
-    # -------注意：每次新的循环需要初始化girls的序列---
-    has.clear()
-    # 匹配成功就+1 从前往后匹配，前面成功就不可修改了。
-    if find(i):
-        res += 1
-print(res)
+// 尝试寻找到一条增广路径。
+bool find(int boy){
+    for(auto girl:g[boy]){ //枚举目前的男生可以选择的全部女生
+        if(!has.count(girl)){  //每个女生只考虑一次，防止嵌套
+            has.insert(girl);
+            if(match[girl] == 0 || find(match[girl])){ //如果当前女生还未被匹配，或匹配的男生可以修改
+                match[girl] = boy;
+                return true;
+            }
+        }
+    }
+    return false; //只有一切可能都不行才返回False
+};
+
+
+int main(){
+    // 输入a,b,n，分别是左半侧，右半侧的点和边的数量
+    int a, b, n;
+    cin >> a >> b >> n; // 从1开始的
+    g.resize(a+1);
+    for (int i = 0;i<n;i++){
+        int x,y;
+        cin >> x >> y;
+        g[x].push_back(y); // 只需要存储左边指向右边的边的个数
+    }
+    
+    int ans = 0;
+    match.resize(b+1); // 存储当前girl已经匹配的对象
+    
+    for(int i = 1;i<=a;i++){
+        //-------注意：每次新的循环需要初始化girls的序列---
+        has.clear();
+        if (find(i)) ans++; // 匹配成功就+1 从前往后匹配，前面成功就不可修改了。
+    }
+    cout << ans << endl;
+    return 0;
+};
 
 ```
 ## 数学
 ### 快速幂
 
 快速幂其实就是个模板，一般用不到。核心就是利用的位运算。
-```java
-static long mod = 100000007;
-static long quick_pow(long a,long b){
-        long res=1;
-        while(b>0){
-           if((b&1)==1) res = res * a % mod;
-           a = a * a % mod; // a翻倍
-           b >>= 1; // 移位
-        }
-        return res%mod;
+```cpp
+int mod = 100000007;
+long long quick_pow(long long a,long long b){
+    long long res=1;
+    while(b>0){
+        if((b&1)==1) res = res * a % mod;
+        a = a * a % mod; // a翻倍
+        b >>= 1; // 移位
+    }
+    return res%mod;
 }
 
 ```
@@ -888,11 +955,11 @@ public class Main{
 4. 判断组合数的奇偶。也是可以很简单的判断，对于C_n^m，如果`(n&m) == m`则为奇数，否则偶数
 ### 约瑟夫问题
 直接背诵模板吧。共有 n 名小伙伴一起做游戏。小伙伴们围成一圈，按 顺时针顺序 从 1 到 n 编号。确切地说，从第 i 名小伙伴顺时针移动一位会到达第 (i+1) 名小伙伴的位置，其中 1 <= i < n ，从第 n 名小伙伴顺时针移动一位会回到第 1 名小伙伴的位置。
-```java
-    public int findTheWinner(int n, int k) {
+```cpp
+    int findTheWinner(int n, int k) {
         return find(n,k)+1;// 注意这里的+1不是必须的，只是因为题目的编号是从1开始的。因此我们需要加上1.
     }
-    private int find(int n, int k){
+    int find(int n, int k){
         if(n == 1)return 0;
         return (find(n-1,k)+k)%n;
     }
@@ -1097,6 +1164,7 @@ public:
 
 ## 单调栈
 单调栈结构一定是一个双段队列，每次维护其中一段，然后最值是另外一段。
+[239. 滑动窗口最大值](https://leetcode.cn/problems/sliding-window-maximum/)
 ```java
 class Solution {
     public int[] maxSlidingWindow(int[] nums, int k) {
@@ -1125,6 +1193,8 @@ class Solution {
 ## 树状数组
 树状数组的特点在于可以快速的求解某个区间的前缀和，并且可以修改某个数字。时间复杂度都是O(logn)。核心的函数有三个`lowbit(x)`,`query(index)`,`add(index, val)`。
 需要注意的是，**树状数组的插入是从1开始的**。
+
+
 ![](https://img-blog.csdnimg.cn/20200707170445981.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70)
 [通过指令创建有序数组](https://leetcode-cn.com/problems/create-sorted-array-through-instructions/)
 ```java
@@ -1182,184 +1252,123 @@ class BIT{
 
 ## 线段树
 线段树可以说是对树状数组的升级了。可以很明显的看出来线段树和树状数组的区别，线段是可以对区间整体抬升复杂度也是O(logn)，树状数组只能是对单点提升。
-```java
-// 通过线段树保存区间的最大值，最小值，区间和。
-public static class Result {
-    public int minv;
-    public int maxv;
-    public int sumv;
-}
-    //query(L, R) 查询区间 [L, R] 的最大值、最小值、区间和；
-    // 用线段树实现动态区间最小值、最大值、区间和查询，对区间A[0..N-1]支持更新操作和查询操作：
-    // update(int L, int R, int v) 将区间[L,R]所有元素值设置为v
-    // query(int L, int R ) 查询数组区间[L,R]的最小值、最大值、区间和
-public static class RangeTree {
-    //N为源数组总长度，可查询区间为[0,N)
-    int N = 0;
-    //M为最底层叶子节点数目，M = min { x | x = 2^k && x >= N }
-    int M = 0;
-    //线段树的数组表示
-    int[] setv = null;	//各结点的设置标记
-    int[] sumv = null;	//各结点的区间和
-    int[] minv = null;	//各结点的最小值
-    int[] maxv = null;	//各结点的最大值
 
-    public RangeTree(int[] A) {
-        build(A);
+```cpp
+// 没有使用lazy tag
+class Node {
+public:
+// l，r维护了区间的两个端点，x是当前的众数，cnt是摩尔投票的结果
+    int l = 0, r = 0;
+    int x = 0, cnt = 0; 
+    // 还可以定义更多的内容 比如最大值，最小值，均值
+};
+
+using pii = pair<int, int>;
+
+class SegmentTree {
+public:
+    //SegmentTree(){}
+    SegmentTree(vector<int>& nums) {
+        this->nums = nums;
+        int n = nums.size();
+        tr.resize(n << 2);
+        for (int i = 0; i < tr.size(); ++i) {
+            tr[i] = Node(); // 得到一个对象
+            // new Node()返回的就是一个指针
+        }
+        build(1, 1, n);
     }
 
-    //构造线段树，从叶子节点递推，复杂度O(N)
-    public void build(int[] A) {
-        N = A.length; // [1,2,3,4]
-        M = calculate(N); //4
-        setv = new int[2*M-1]; // 7
-        sumv = new int[2*M-1]; 
-        minv = new int[2*M-1];
-        maxv = new int[2*M-1];
-
-        //初始化所有叶子结点
-        for ( int i=0; i<N; i++ ) {
-            setv[i+M-1] = Integer.MAX_VALUE;
-            sumv[i+M-1] = minv[i+M-1] = maxv[i+M-1] = A[i];
+    pii query(int u, int l, int r) {
+        // 当前点的区间小于查询区间， 直接返回
+        if (tr[u].l >= l && tr[u].r <= r) {
+            return {tr[u].x, tr[u].cnt};
         }
-        // 多余的废弃的 这里的max和min都初始为0 是有点小问题的。
-        for ( int i=N; i<M; i++ ) {
-            sumv[i+M-1] = 0;
-            minv[i+M-1] = Integer.MAX_VALUE;
-            maxv[i+M-1] = Integer.MIN_VALUE;
-            //sumv[i+M-1] = minv[i+M-1] = maxv[i+M-1]= 0;
-            setv[i+M-1] = Integer.MAX_VALUE;
+        int mid = (tr[u].l + tr[u].r) >> 1;
+        // 查询区间完整在左侧，直接查询左侧
+        if (r <= mid) {
+            return query(u << 1, l, r);
         }
-
-        //初始化非叶子结点
-        for ( int i=M-2; i>=0; i-- ) {
-            setv[i] = Integer.MAX_VALUE;
-            minv[i] = Math.min(minv[2*i+1], minv[2*i+2]);
-            maxv[i] = Math.max(maxv[2*i+1], maxv[2*i+2]);
-            sumv[i] = sumv[2*i+1] + sumv[2*i+2];
+        // 查询区间完整在右侧，直接查询右侧
+        if (l > mid) {
+            return query(u << 1 | 1, l, r);
         }
-
-    }
-
-    // 区间最小值查询  // L : 待查询区间左边界  // R : 待查询区间右边界
-    public Result query(int L, int R) {
-        Result res = new Result();
-        res.minv = Integer.MAX_VALUE;// 这里解决了我的疑问
-        res.maxV = Integer.MIN_VALUE; 
-        query(L, R, 0, 0, M-1, res);
-        return res;
-    }
-
-    //区间最小值查询 c : 当前结点在线段树中的编号 //CUR_L : 当前结点区间的左边界 //CUR_R : 当前结点区间的右边界
-    private void query(int L, int R, int c, int CL, int CR, Result res) {
-
-        if ( setv[c] != Integer.MAX_VALUE ) {// 懒标记存在，需要更新
-            res.sumv += setv[c] * (Math.min(R,CR)-Math.max(L,CL)+1);
-            res.maxv = Math.max(res.maxv, maxv[c]);
-            res.minv = Math.min(res.minv, minv[c]);
-        } else if ( L <= CL && CR <= R ) {
-            //待查询区间完全覆盖当前结点区间
-            res.maxv = Math.max(res.maxv, maxv[c]);
-            res.minv = Math.min(res.minv, minv[c]);
-            res.sumv += sumv[c];
+        // 分居两边
+        auto left = query(u << 1, l, r);
+        auto right = query(u << 1 | 1, l, r);
+        // 众数一样，直接合并
+        if (left.first == right.first) {
+            left.second += right.second;
+        // 否则按照摩尔投票，得到最多的
+        } else if (left.second >= right.second) {
+            left.second -= right.second;
         } else {
-            int CM = ( CL + CR ) / 2;
-            //查询区间与左半区间有重叠
-            if ( L <= CM ) query(L, R, 2*c+1, CL, CM, res);
-            //查询区间与右半区间重叠
-            if ( R > CM ) query(L, R, 2*c+2, CM+1, CR, res);
+            right.second -= left.second;
+            left = right;
         }
-
+        return left;
     }
 
-    //更新一个区间，将 [L,R] 区间所有值更新为 v
-    public void update(int L, int R, int v) {
-        update(L,R,v,0,0,M-1);
+private:
+    vector<Node> tr;
+    vector<int> nums;
+
+    void build(int u, int l, int r) {
+        tr[u].l = l;
+        tr[u].r = r;
+        if (l == r) {
+            tr[u].x = nums[l - 1];
+            tr[u].cnt = 1;
+            return;
+        }
+        int mid = (l + r) >> 1;
+        build(u << 1, l, mid);
+        build(u << 1 | 1, mid + 1, r);
+        pushup(u);
     }
 
-    //更新区间最小值//c : 当前结点在线段树中的编号//CL : 当前结点区间的左边界 //CR : 当前结点区间的右边界
-    private void update(int L, int R, int v, int c, int CL, int CR) {
-        if ( L == R ) {
-            setv[c] = sumv[c] = maxv[c] = minv[c] = v;
+    void pushup(int u) {
+        if (tr[u << 1].x == tr[u << 1 | 1].x) {
+            tr[u].x = tr[u << 1].x;
+            tr[u].cnt = tr[u << 1].cnt + tr[u << 1 | 1].cnt;
+        } else if (tr[u << 1].cnt >= tr[u << 1 | 1].cnt) {
+            tr[u].x = tr[u << 1].x;
+            tr[u].cnt = tr[u << 1].cnt - tr[u << 1 | 1].cnt;
         } else {
-            if ( L <= CL && R >= CR ) {
-                setv[c] = v;
-            } else {
-                // 首先下移标记
-                pushdown(c);
-                int CM = (CR+CL)/2, lc = 2*c+1, rc = 2*c+2;
-                if ( L <= CM ) {
-                    update(L, R, v, lc, CL, CM);
-                } else {
-                    maintain(lc, CL, CM);
-                }
-                if ( R > CM ) {
-                    update(L, R, v, rc, CM+1, CR);
-                } else {
-                    maintain(rc, CM+1, CR);
-                }
-            }
-            maintain(c,CL,CR);
+            tr[u].x = tr[u << 1 | 1].x;
+            tr[u].cnt = tr[u << 1 | 1].cnt - tr[u << 1].cnt;
+        }
+    }
+};
+
+class MajorityChecker {
+public:
+    MajorityChecker(vector<int>& arr) {
+        tree = new SegmentTree(arr);
+        for (int i = 0; i < arr.size(); ++i) {
+            d[arr[i]].push_back(i);
         }
     }
 
-    // 将当前结点的设置标记下移
-    private void pushdown(int c) {
-        if ( setv[c] != Integer.MAX_VALUE ) {
-            setv[2*c+1] = setv[c];
-            setv[2*c+2] = setv[c];
-            setv[c] = Integer.MAX_VALUE;
-        }
+    int query(int left, int right, int threshold) {
+        // 得到区间内的众数
+        int x = tree->query(1, left + 1, right + 1).first;
+        // 二分查找，index 大于等于left的
+        auto l = lower_bound(d[x].begin(), d[x].end(), left);
+        // 二分查找，index大于等于riht的
+        auto r = upper_bound(d[x].begin(), d[x].end(), right);
+        return r - l >= threshold ? x : -1;
     }
 
-    // 计算当前结点区间的最小最大值及区间和
-    private void maintain(int c, int CL, int CR) {
-        int lc = 2*c+1, rc = 2*c+2;
-        if ( setv[c] == Integer.MAX_VALUE ) {
-            sumv[c] = sumv[lc] + sumv[rc];
-            maxv[c] = Math.max(maxv[lc],maxv[rc]);
-            minv[c] = Math.min(minv[lc],minv[rc]);
-
-        } else {// 懒标记存在，发生了区间更新
-            sumv[c] = setv[c]*(CR-CL+1);
-            maxv[c] = minv[c] = setv[c];
-        }
-    }
-
-    // 计算最底层的叶子结点数目 大于个数的第一个二次方
-    private int calculate(int n) {
-        int y = 1;
-        while ( y < n ) {
-            y <<= 1;
-        }
-        return y;
-    }
-
-    // 测试
-    public static void main(String[] args) {
-        int[] v = { 7, 8, 9, 5, 6, 4, 3, 2 };
-        RangeTree inst = new RangeTree(v);
-        for ( int i=0; i<v.length; i++ ) {
-            Result res = inst.query(0, i);
-            System.out.printf("%d,%d,%d  ", res.minv, res.maxv, res.sumv);
-        }
-        System.out.println();
-        for ( int i=0; i<v.length; i++ ) {
-            Result res = inst.query(i, v.length-1);
-            System.out.printf("%d,%d,%d  ", res.minv, res.maxv, res.sumv);
-        }
-        System.out.println();
-        inst.update(0, 3, 1);
-        inst.update(2, 7, 2);
-        for ( int i=0; i<v.length; i++ ) {
-            Result res = inst.query(i, v.length-1);
-            System.out.printf("%d,%d,%d  ", res.minv, res.maxv, res.sumv);
-        }
-
-    }
-
-}
+private:
+    unordered_map<int, vector<int>> d;
+    
+    SegmentTree* tree;// 这里是一个地址 
+    // 如果用SegmentTree tree; 需要SegmentTree有一个默认的初始化方法
+};
 ```
+
+lazy tag的线段树 [线段树](https://blog.csdn.net/zcz5566719/article/details/130477100)
 
 # 输入输出
 对于面试问题需要有一个规范的输入输出模板。以下格式需要熟记。
@@ -1396,44 +1405,6 @@ int main(){
         m.clear();
     }
 }
-```
-如果需要输出特定的小数点，可以是使用`System.out.printf("%.6f\n", ans1);`
-## 更快的输入输出
-```java
-public static void main(String[] args) throws IOException {
-    Reader.init( System.in );
-}
-
-class Reader {
-    static BufferedReader reader;
-    static StringTokenizer tokenizer;
-
-    /** 调用这个方法来初始化reader，即InputStream*/
-    static void init(InputStream input) {
-        reader = new BufferedReader(
-                new InputStreamReader(input) );
-        tokenizer = new StringTokenizer("");
-    }
-
-    /** 获取下一段文本 */
-    static String next() throws IOException {
-        while ( ! tokenizer.hasMoreTokens() ) {
-            //TODO add check for eof if necessary
-            tokenizer = new StringTokenizer(
-                    reader.readLine() );
-        }
-        return tokenizer.nextToken();
-    }
-
-    static int nextInt() throws IOException {
-        return Integer.parseInt( next() );
-    }
-
-    static double nextDouble() throws IOException {
-        return Double.parseDouble( next() );
-    }
-}
-
 ```
 # 典型问题
 ## 背包问题
@@ -1644,22 +1615,6 @@ int main () {
 
 
 ## 重写排序
-```java
-Arrays.sort(arr, new Comparator<int[]>(){
-    public int compare(int[] a, int[] b){
-        return a[0]-b[0];
-    }
-});
-
-
-List<int[]> list = new ArrayList<>(map.values());
-Collections.sort(list, (a, b)->{
-    if (a[0] != b[0]) return a[0] - b[0];
-    if (a[1] != b[1]) return a[1] - b[1];
-    return a[2] - b[2];
-});
-
-```
 
 ```c++
 // 如果cmp返回true，进行交换。 因此是大的在前。
@@ -1692,5 +1647,3 @@ https://www.acwing.com/blog/content/17174/
 #include<bits/stdc++.h>
 using namespace std;
 ```
-
-1157  1172
