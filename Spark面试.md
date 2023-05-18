@@ -1,8 +1,10 @@
 - [spark 框架和运行原理](#spark-框架和运行原理)
   - [Spark组件](#spark组件)
-  - [运行框架](#运行框架)
-  - [集群运行](#集群运行)
+  - [运行框架，基本架构](#运行框架基本架构)
+  - [集群运行（描述spark里一个任务的执行过程）](#集群运行描述spark里一个任务的执行过程)
 - [Job，Stage，Task](#jobstagetask)
+  - [DAG](#dag)
+  - [partition](#partition)
   - [Job](#job)
   - [stage](#stage)
     - [宽窄依赖](#宽窄依赖)
@@ -17,6 +19,7 @@
   - [分布共享变量](#分布共享变量)
     - [累加器 只写](#累加器-只写)
     - [广播变量 只读](#广播变量-只读)
+- [Spark源码解析](#spark源码解析)
 - [与MR对比](#与mr对比)
   - [优点](#优点)
 - [Spark调优](#spark调优)
@@ -37,19 +40,34 @@
 ## Spark组件
 - Spark Core： 
 将 分布式数据 抽象为弹性分布式数据集（RDD），实现了应用**任务调度**、RPC、序列化和压缩，并为运行在其上的上层组件提供API。它提供了**内存计算的能力**。
+  - 基础设施
+    - SparkConf：用于管理Spark应用程序的配置
+    - RPC框架：早期用的Akka，后期改成了Netty实现。
+    - ListenerBus：监听器模式异步调用的实现
+    - 度量系统：监控各个组件的运行。
+  - SparkContext：![在这里插入图片描述](https://img-blog.csdnimg.cn/ced591c1b33143b292e70fd43fa4153b.png)
+  - SparkEnv：spark的运行时环节。提供Executor运行环境。
+  - 存储体系：BlockManager
+  - 调度系统：
+    - DAGScheduler：负责创建Job；将DAG中的RDD划分到不同的Stage；给Stage创建对应的Task；批量提奖Task。
+    - TaskScheduler：按照FIFO或者FAIR等调度算法对批量Task进行调度；为task分配资源；将Task发送到Executor上执行。
+  - 计算引擎：
+  - ExecutorAllocationManager：基于工作负载动态分配和删除executor。定时调度，计算需要的executor数量。
 
 - Spark SQL：
 Spark Sql 是Spark来**操作结构化数据的程序包**，可以使用SQL语句的方式来查询数据。每个数据库表被当做一个RDD，Spark SQL查询被转换为Spark操作。
 
-## 运行框架
+## 运行框架，基本架构
 
 master/worker指的是资源的调度层面，申请内存等。driver/executor则是在任务的执行调度层面。
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/5b90bf1d96c54e3099ffe06093cded08.png)
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/7d5f1c3b621c4e3a80af25c4e771f01f.png)
 - Cluster Manager（master）：控制整个集群，监控worker。在standalone模式中即为Master主节点，控制整个集群，监控worker。在YARN模式中为资源管理器
 
+Cluster Manager负责对各个Worker上内存，CPU等资源的分配给application，但是不负责对executor分配资源。
+
 - Worker：
-从节点，负责控制计算节点，启动Executor或者Driver。集群中任何一个可以运行spark应用代码的节点。**Worker就是物理节点**，可以在上面**启动Executor/worker进程**。一个worker上的memory、cpu由多个executor共同分摊。
+从节点，受Cluster Manager资源管理，负责控制计算节点，启动Executor（或者Driver）。集群中任何一个可以运行spark应用代码的节点。**Worker就是物理节点**，可以在上面**启动Executor/worker进程**。一个worker上的memory、cpu由多个executor共同分摊。
 
   - Driver：
   运行Application的main函数并**创建SparkContext**，**准备Spark应用程序的运行环境**。在Spark中由SparkContext负责与Cluster Manager通信，**进行资源申请、任务的分配和监控**等，当Executor部分运行完毕后，Driver同时负责**将SparkContext关闭**。
@@ -64,30 +82,45 @@ master/worker指的是资源的调度层面，申请内存等。driver/executor�
 
 - 每个Application都有自己专属的Executor进程，并且该进程在Application运行期间一直驻留。**Executor进程以多线程的方式运行Task**。
 - Spark运行过程与资源管理器无关，只要能够获取Executor进程并保存通信即可。
-## 集群运行
+## 集群运行（描述spark里一个任务的执行过程）
+（分区的数量取决于partition数量的设定，每个分区的数据只会在一个task中计算。）
+
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/bef07a0b0a0d4df0a65861d70566385e.png)
 
-1. Driver进程启动，创建一个SparkContext进行资源的申请、任务的分配和监控。发送请求到Master节点上,进行Spark应用程序的注册。
-2. SparkContext向资源管理器（Standalone，Mesos，Yarn）申请运行Executor资源。Master在接受到Spark应用程序的注册申请之后,会发送给Worker进行资源的调度和分配。Worker 在接受Master的请求之后，启动Executor来分配资源。Executor启动分配资源好后，向Driver进行反注册。
-3. SparkContext根据RDD的依赖关系构建DAG图，DAG图提交给DAGScheduler解析成Stage，然后把一个个TaskSet提交给底层调度器TaskScheduler处理。 
-4. Executor向SparkContext申请Task，TaskScheduler将Task发放给Executor运行并提供应用程序代码。
-5. Task在Executor上运行把执行结果反馈给TaskScheduler，然后反馈给DAGScheduler，运行完毕后写入数据并释放所有资源。
-   
+1. Driver进程启动，创建一个SparkContext进行资源的申请、任务的分配和监控。通过RPCEnv发送请求到Master节点上,进行Spark应用程序的注册。
+2. SparkContext向资源管理器（Standalone，Mesos，Yarn）申请运行Executor资源。Master在接受到Spark应用程序的注册申请之后，会发送给Worker进行资源的调度和分配。Worker 在接受Master的请求之后，启动Executor来分配资源。Executor启动分配资源好后，通过RPCEnv向Driver进行反注册。
+3. SparkContext根据RDD的依赖关系构建DAG，DAG提交给DAGScheduler创建Job并且解析成不同的Stage。DAGScheduler根据Stage内RDD的partition数量创建多个task组（TaskSet）并且批量提交给底层调度器TaskScheduler处理。 
+4. Executor向SparkContext申请Task，TaskScheduler按照FIFO或者FAIR等调度算法对批量Task进行调度，为task分配资源并将Task发放给Executor运行。提供应用程序代码。
+5. SparkContext会在RDD转换开始前用BlockManager和BroadcastManager将任务配置进行广播。
+6. Task在Executor上运行把执行结果反馈给TaskScheduler，然后反馈给DAGScheduler，运行完毕后写入数据并释放所有资源。
+
+
 # Job，Stage，Task
+## DAG
+用来反映RDD之间的依赖关系。
+## partition
+数据分区，一个RDD的数据可以被划分为多少个分区。Spark根据partition的数量来确定Task的数量。
+
 ## Job
-一个Job包含多个RDD及作用于相应RDD上的各种操作，它包含很多task的并行计算。它通常由一个或多个RDD转换操作和行动操作组成，这些操作会被划分为一些Stage
+用户提交的作业。当RDD及其DAG被提交给DAGScheduler以后，DAGScheduler会将RDD的transform和action都视为一个job。
+
+**一个Job包含多个RDD及作用于相应RDD上的各种操作，它包含很多task的并行计算**。它通常由一个或多个RDD转换操作和行动操作组成，这些操作会被划分为一些Stage。
+
 ## stage
-是Job的基本调度单位，由一组共享相同的Shuffle依赖关系的任务组成。有一个job分割多个stage的的点在于shuffle，宽依赖Stage需要进行Shuffle操作，而窄依赖Stage则不需要。
+是Job的基本调度单位，由**一组共享相同的Shuffle依赖关系的任务组成**。有一个job分割多个stage的的点在于shuffle，宽依赖Stage需要进行Shuffle操作，而窄依赖Stage则不需要。
 
 比如某个job有一个reduceByKey，会被切分为两个stage。
   1. stage0: 从textFile到map，最后一步是**shuffle write**操作。我们可以简单理解为对pairs RDD中的数据进行分区操作，每个task处理的数据中，相同的key会写入同一个磁盘文件内。 
   2. stage1：主要是执行从reduceByKey到collect操作，stage1的各个task一开始运行，就会首先执行shuffle read操作。执行**shuffle read**操作的task，会从stage0的各个task所在节点**拉取属于自己处理的那些key**，然后对同一个key进行全局性的聚合或join等操作。
+   
 ### 宽窄依赖
 - 窄依赖：
 指**父RDD的每一个分区最多被一个子RDD的分区所用**，表现为一个父RDD的分区对应于一个子RDD的分区，和两个父RDD的分区对应于一个子RDD 的分区。
+子RDD依赖与父RDD中固定的Partiton，分为OneToOneDependency和RangeDependency
+
 
 - 宽依赖：
-**指子RDD的分区依赖于父RDD的所有分区，这是因为shuffle类操作**。
+**指子RDD的分区依赖于父RDD的所有分区，这是因为shuffle类操作**。子RDD对父RDD的所有分区都可能产生依赖。
 
 > stage的分类
 在Spark中，Stage可以分成两种类型。
@@ -103,8 +136,9 @@ master/worker指的是资源的调度层面，申请内存等。driver/executor�
   - 其输入边界可以是从外部获取数据，也可以是另一个ShuffleMapStage的输出
   - ResultStage的最后Task就是ResultTask
   - 在一个Job里必定有该类型Stage
+  
 ## Task
-被发送到executor上的工作单元。每个Task负责计算一个分区的数据。可以分为需要shuffle的shuffleMapTask和resultTask。
+被发送到executor上的具体任务。每个Task负责计算一个分区的数据。可以分为需要shuffle的shuffleMapTask和resultTask。
 
 
 一个Application由一个Driver和若干个Job构成，一个Job由多个Stage构成，一个Stage由多个没有Shuffle关系的Task组成。
@@ -163,10 +197,16 @@ Dataset是DataFrame的扩展，它提供了类型安全，面向对象的编程�
 广播变量可以高效的向所有工作节点发送一个较大的只读值或者表。
 
 spark会自动将闭包中的变量都复制并发送到工作节点上，这样会低效。其实多个工作节点可以共用同一个表变量。
+# Spark源码解析
+
 # 与MR对比
 ## 优点
 Spark速度更快，因为可以使用多线程并且可以使用内存加速计算。
 
+1. 减少磁盘I/O: MR中他，map端将中间输出和结果存储在磁盘中，reduce端又需要从磁盘读写中间结果，容易导致IO瓶颈。 Spark使用了内存存储中间结果。
+2. 增加并行度：中间结果写入磁盘和从磁盘读取中间结果是不同环节。hadoop只能串行，spark可以串行也可以并行。
+3. 避免重新计算：stage中某个分区的task失败以后，会重新对此stage调度，但是在重新调度的时候会过滤掉已经成功执行的分区任务，避免重复计算。
+4. 可选的shuffle排序：MapReduce在shuffle前有固定的排序操作，但是spark可以根据不同的场景选在map端还是在reduce端。
 # Spark调优
 总体的思路包括，开发调优、资源调优、数据倾斜调优、shuffle调优。
 ## 开发调优
