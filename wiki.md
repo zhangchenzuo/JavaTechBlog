@@ -158,22 +158,3 @@ lambda架构下的数仓结构，包括了一个实时明细层，存放了一�
 >data workflow
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/1e6d5bad0f034bfa8ba2ad3896c25f11.png)
 
-1.数仓
-Situation: 数仓规模PB，技术栈（aws s3+glue），event
-Target: source of true data
-理解广告业务，梳理数据模型，沟通， 
-广告revenue, supply, autction 3 subjects 维度建模，搭建ods层，dwd明细层，ads
-2.Spark ELT
-Sitation: 大量离线数据需要处理，source of true.
-Target: 高效，高质量的输出etl后的数据
-Spark 调优（传统），解决云上spark低效问题 (s3)
-数据质量
-pipeline
-3.migration
-Yarn spark -> eks spark, hads -> s3
-老的piepline优化
-1.简洁，2.解偶
-3.稳定，4.幂等 更好维护
-4.数据安全
-Situation： 谁能访问，存什么数据(PII)不能存
-Action result: 设计了pii的方案，保护用户隐私 (包装)
