@@ -50,6 +50,7 @@
   - [重写排序](#重写排序)
   - [最大公约数](#最大公约数)
 - [C++ 头文件](#c-头文件)
+- [c++ api](#c-api)
 # 算法思想
 ## 二分
 二分思想比较场景，模板就不写了。分析一下二分的场景。
@@ -343,6 +344,71 @@ return f[(1<<n)-1][n-1];
 **dfs问题需要注意不能重复，以及每次传进函数的都应该是深复制。**
 
 回溯算法需要注意一点，**在dfs退出以后，记着恢复现场**。
+[二叉树中和为某一值的路径](https://leetcode.cn/problems/er-cha-shu-zhong-he-wei-mou-yi-zhi-de-lu-jing-lcof/)
+```cpp
+class Solution {
+public:
+    vector<vector<int>> ans;
+    vector<int> path;
+    void dfs(TreeNode *root, int target){
+        // dfs 1: 想清楚退出条件
+        if (!root){
+            return;
+        }
+        // dfs 2: 更新当前节点，考虑当前节点加入的情况
+        path.push_back(root->val);
+        target -= root->val;
+        if (!root->right && !root->left && target == 0){
+            ans.push_back(path);
+        }
+        // dfs 3: 更新当前节点加入情况下，其他的dfs
+        dfs(root->right, target);
+        dfs(root->left, target);
+        // dfs 4： 删除当前状态
+        path.pop_back();
+    }
+    vector<vector<int>> pathSum(TreeNode* root, int target) {
+        dfs(root, target);
+        return ans;
+    }
+};
+```
+
+对于全排列问题，有一个典型的问题是在一个重复的数列中，返回不重复的内容。这里就有一个小trick的地方，判断前面那个数字的是否与当前的数字相同，如果相同看这个数字有没有被考虑。
+
+如果没有被考虑，当前数字也不考虑。因为显然应该从第一个数字开始考虑。
+
+```cpp
+class Solution {
+public:
+    vector<vector<int>> ans;
+    vector<int> perm;
+    vector<int> vis;
+    void backtrack(vector<int>& nums) {
+        if (perm.size() == nums.size()) {
+            ans.emplace_back(perm);
+            return;
+        }
+        for (int i = 0; i < nums.size(); ++i) {
+            if (vis[i] || (i > 0 && nums[i] == nums[i - 1] && !vis[i - 1])) {
+                continue;
+            }
+            perm.emplace_back(nums[i]);
+            vis[i] = 1;
+            backtrack(nums);
+            vis[i] = 0;
+            perm.pop_back();
+        }
+    }
+
+    vector<vector<int>> permuteUnique(vector<int>& nums) {
+        vis.resize(nums.size());
+        sort(nums.begin(), nums.end());
+        backtrack(nums);
+        return ans;
+    }
+};
+```
 ## bfs（拓扑排序）
 bfs是我非常喜欢的一个算法，非常的清晰。使用的场合较多，**树的遍历，可行性的宽搜，以及典型的拓扑排序问题**，这个我会下面仔细分析下。
 
@@ -1167,6 +1233,7 @@ public:
 单调栈结构一定是一个双段队列，每次维护其中一段，然后最值是另外一段。
 [239. 滑动窗口最大值](https://leetcode.cn/problems/sliding-window-maximum/)
 [739. 每日温度](https://leetcode.cn/problems/daily-temperatures/)
+[队列的最大值](https://leetcode.cn/problems/dui-lie-de-zui-da-zhi-lcof/)
 ```cpp
 // 如果用pq，复杂度是nlogn
 // 用双端队列是n
@@ -1665,4 +1732,25 @@ static const auto io_sync_off = []()
     return nullptr;
 }();
 
+```
+# c++ api
+```cpp
+// 数字转换为字母
+string x = to_string(num);
+// string -> int
+int x = stoi(s);
+double d = stod(s);
+
+// substring
+s.substr(2,2)// 从idex=2开始，长度为2
+
+// sub vector
+vector<int> x(nums.begin(), nums.begin()+mid+1);
+vector<int> y(nums.begin()+mid+1, nums.end());
+
+// append vetor to vector
+sortnums.insert(sortnums.end (), b.begin()+j, b.end()); // 在sortnums后面添加
+
+// insert element in vector
+heights.insert(heights.begin(), 0);
 ```
