@@ -224,7 +224,7 @@ TaskSchedulerImpl初始化的时候创建了pool并且传入了对应的调度�
 
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/b3a88df80a1c48f18cf6f32568e21d98.png)
 
-关于本地性有五个级别，每个本地性级别会进行多轮分配， 每一轮依次轮询每个executor，为每一个executor分配一个符合本地性要求的任务。这样一轮下来每个executor都会分配到一个任务，显然大多数情况下，executor的资源是不会被占满的。
+关于本地性有五个级别PROCESS_LOCAL(本地进程), NODE_LOCAL（本地节点）, NO_PREF（没有偏好）, RACK_LOCAL（本地机架）, ANY（任何），每个本地性级别会进行多轮分配， 每一轮依次轮询每个executor，为每一个executor分配一个符合本地性要求的任务。这样一轮下来每个executor都会分配到一个任务，显然大多数情况下，executor的资源是不会被占满的。
 
 ## 小结
 任务在driver中从诞生到最终发送的过程：
