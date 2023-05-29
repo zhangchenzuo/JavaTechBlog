@@ -7,7 +7,7 @@
   - [partition](#partition)
   - [Job](#job)
   - [stage](#stage)
-    - [宽窄依赖](#宽窄依赖)
+    - [依赖划分原则](#依赖划分原则)
   - [Task](#task)
 - [spark的数据结构](#spark的数据结构)
   - [RDD](#rdd)
@@ -109,13 +109,17 @@ Cluster Manager负责对各个Worker上内存，CPU等资源的分配给applicat
 **一个Job包含多个RDD及作用于相应RDD上的各种操作，它包含很多task的并行计算**。它通常由一个或多个RDD转换操作和行动操作组成，这些操作会被划分为一些Stage。
 
 ## stage
-是Job的基本调度单位，由**一组共享相同的Shuffle依赖关系的任务组成**。有一个job分割多个stage的的点在于shuffle，宽依赖Stage需要进行Shuffle操作，而窄依赖Stage则不需要。
+是Job的基本调度单位，由**一组共享相同的Shuffle依赖关系的任务组成**。有一个job分割多个stage的的点在于shuffle，宽依赖Stage需要进行Shuffle操作，而窄依赖Stage则不需要。没有依赖关系的stage并行执行，有依赖关系的stage顺序执行。
 
 比如某个job有一个reduceByKey，会被切分为两个stage。
   1. stage0: 从textFile到map，最后一步是**shuffle write**操作。我们可以简单理解为对pairs RDD中的数据进行分区操作，每个task处理的数据中，相同的key会写入同一个磁盘文件内。 
   2. stage1：主要是执行从reduceByKey到collect操作，stage1的各个task一开始运行，就会首先执行shuffle read操作。执行**shuffle read**操作的task，会从stage0的各个task所在节点**拉取属于自己处理的那些key**，然后对同一个key进行全局性的聚合或join等操作。
-   
-### 宽窄依赖
+
+### 依赖划分原则
+NarrowDependency被分到同一个stage，这样可以管道的形式迭代执行，ShuffleDependency需要依赖多个分区。
+
+容灾的角度：Narrow只需要重新执行父RDD的丢失分区的计算即可恢复，shuffle需要考虑回复所有父RDD的丢失分区。
+
 - 窄依赖：
 指**父RDD的每一个分区最多被一个子RDD的分区所用**，表现为一个父RDD的分区对应于一个子RDD的分区，和两个父RDD的分区对应于一个子RDD 的分区。
 子RDD依赖与父RDD中固定的Partiton，分为OneToOneDependency和RangeDependency
@@ -127,11 +131,11 @@ Cluster Manager负责对各个Worker上内存，CPU等资源的分配给applicat
 > stage的分类
 在Spark中，Stage可以分成两种类型。
 
-- ShuffleMapStage：
+- ShuffleMapStage：对shuffle数据映射到下游stage的各个分区
   - 这种Stage是以Shuffle为输出边界
   - 其输入边界可以是从外部获取数据，也可以是另一个ShuffleMapStage的输出
   - 其输出可以是另一个Stage的开始
-  - ShuffleMapStage的最后Task就是ShuffleMapTask
+  - ShuffleMapStage的最后Task就是ShuffleMapTask，通过shuffle连接下游数据
   - 在一个Job里可能有该类型的Stage，也可以能没有该类型Stage
 - ResultStage
   - 这种Stage是直接输出结果
@@ -156,7 +160,12 @@ Cluster Manager负责对各个Worker上内存，CPU等资源的分配给applicat
 
 # spark的数据结构
 ## RDD
-弹性分布式数据集（Resilient Distributed Dataset， RDD）。是一个不可变（只读）的分布式对象集合，每个RDD可以有多个分区。它是spark的基础数据结构，具有内存计算能力、数据容错性以及数据不可修改特性。
+弹性分布式数据集（Resilient Distributed Dataset， RDD）。是一个不可变（只读）的分布式对象集合，每个RDD可以有多个分区。它是spark的基础数据结构，具有内存计算能力、数据容错性以及数据不可修改特性。可以支持并行计算。
+
+一个RDD包括一个或者多个分区，每个分区实际上是一个数据集合片段。
+
+
+> 为什么需要RDD：基本模型并行容错，依赖划分需要，并行执行需要，容错需要。
 ### RDD持久化
 让spark持久化存储一个RDD，计算出的RDD节点会分别保存它们所求出的分区数据。如果一个有持久化数据的节点发生故障，spark会在需要缓存数据时候重算。默认情况下，`persist()`会把数据以**序列化的形式缓存在JVM的堆空间**中。也可以通过改变参数，存在硬盘上。
 
