@@ -74,7 +74,7 @@
   - [Future类](#future类)
   - [Callable和Future的关系](#callable和future的关系)
   - [重要方法](#重要方法)
-    - [方法一：继承Callable<>类](#方法一继承callable类)
+    - [方法一：继承Callable\<\>类](#方法一继承callable类)
     - [方法二：lambda表达式](#方法二lambda表达式)
   - [JDK中的Future](#jdk中的future)
   - [用FutureTask创建Future](#用futuretask创建future)
@@ -905,10 +905,11 @@ atomic包下的类基本都是自旋锁实现的，AtomicInteger的实现，自�
 
 ## 锁优化（JVM帮助实现）
 * 偏向锁：如果一个线程取得了锁，锁进入偏向模式。当这个线程再次请求时候，无需任何同步操作。（在竞争激烈的场景下失效）
-* 轻量级锁：在偏向锁失败以后，虚拟机会将对象头部作为指针 指向持有锁的线程堆栈内部，判断一个线程是否持有对象锁。 如果失败会膨胀为重量级锁。
-* 自旋锁和自适应：循环了几次之后自己放弃自旋锁的方法。
-* 锁消除：对于没有必要使用的锁不使用
-* 锁粗化：合并几个锁。
+* 轻量级锁：在偏向锁失败以后，虚拟机会将对象头部作为指针 指向持有锁的线程堆栈内部，判断一个线程是否持有对象锁。 优先使用乐观锁，如果失败会膨胀为重量级锁。
+* 自旋：如果线程可以很快获得锁，那么可以不挂起线程，而是让线程进行几个忙循环。节省线程挂起和切换的时间。循环了几次之后自己放弃自旋锁的方法。
+* 自适应自旋：自旋时间不再固定，而是由前一个在同一个锁的自旋时间和当前锁的状态绝对。
+* 锁消除：对于没有必要使用的锁不使用。在编译代码时候，检测到不存在数据竞争，JVM会锁消除。`-XX:+EliminteLocks`开启，并且需要逃逸分析`-XX:+DoEscapeAnalisis`。逃逸分析：方法中定义的对象可能别外部方法引用，称为方法逃逸；如果对象可能被外部线程访问，称为线程逃逸。如赋值给类变量或者可以在其他线程中仿真的实例变量。
+* 锁粗化：合并几个锁。建议加到锁的同步范围扩大。合并多个synchronized
 
 [锁升级](https://www.cnblogs.com/mingyueyy/p/13054296.html)
  ![在这里插入图片描述](https://img-blog.csdnimg.cn/20210315095207920.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70)
@@ -916,6 +917,11 @@ atomic包下的类基本都是自旋锁实现的，AtomicInteger的实现，自�
 
 锁的信息都是存储在对象头中
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/20210315095423469.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70)
+
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/20201018164558158.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70#pic_center)
+
+
 
 # CAS原理
 实现不能被打断的并发操作，Compare and Swap。CAS有三个操作数：内存值V，预期值A，要修改的值B。**当且仅当预期值与内存值一样，才将内存值进行修改**。每次有一个线程可以成功执行。**通过硬件指令保证了原子性。**

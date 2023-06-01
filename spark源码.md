@@ -1,9 +1,5 @@
 - [Spark执行环境](#spark执行环境)
-- [RPC环境](#rpc环境)
-  - [序列化管理器 SerializerManager](#序列化管理器-serializermanager)
-  - [广播管理器 BroadcastManager](#广播管理器-broadcastmanager)
-  - [map任务输出追踪器 MapOutputTrackerManager](#map任务输出追踪器-mapoutputtrackermanager)
-  - [输出提交协调器 OutputCommitCoordinator](#输出提交协调器-outputcommitcoordinator)
+- [SparkEnv](#sparkenv)
 - [存储体系](#存储体系)
   - [核心函数](#核心函数)
 - [调度系统](#调度系统)
@@ -16,20 +12,33 @@
   - [小结](#小结)
 
 # Spark执行环境
-# RPC环境
+Driver上的执行环境。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/df2798227e8348acb7e7d846d6f66a16.png)
+
+核心的几个：
+- SparkEnv：其实是executor的执行环境。但是local模式下也需要。
+- DAGScheduler: 提交Job，切分stage，发送给TaskScheduler
+- TaskScheduler: 调度task
+  
+# SparkEnv
+Executor的执行环境。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/ddd6fd6a202c4aefb25a82d75754d801.png)
+- RPC环境
+- 序列化管理器 SerializerManager
+- 广播管理器 BroadcastManager
+- map任务输出追踪器 MapOutputTrackerManager
+- 输出提交协调器 OutputCommitCoordinator
+- BlockManager、BlockManagerMaster 等存储体系。
+- MemoryManager
+- ShuffleManager
+
 NettyRpcEnv需要一个消息调度器，dispatcher
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/d09054571dc64be69850662833d886f9.png)
 1. 序号1表示调用Inbox的post方法将消息放入messages列表
 2. 序号2表示将消息的Inbox相关的endpointData放入receivers
 3. 序号3表示messageLoop每次循环首先从receivers中获取EndpointData
 4. 序号4表示endpointData中inbox的process方法对消息进行处理
-## 序列化管理器 SerializerManager
 
-## 广播管理器 BroadcastManager
-
-## map任务输出追踪器 MapOutputTrackerManager
-
-## 输出提交协调器 OutputCommitCoordinator
 
 # 存储体系
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/a03e94bab23b41a0b4fcd4d18679fb77.png)
