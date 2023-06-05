@@ -116,7 +116,7 @@ RDD的数据本地性来源于file的partition的位置，task的perfer来源于
 2. 对于node和executor有黑名单机制，黑名单会有超时机制
 
 # spark的内存模型
-
+![在这里插入图片描述](https://img-blog.csdnimg.cn/c98eb9ce8394456c80b13607d651a229.png)
 # Job，Stage，Task
 ## DAG
 用来反映RDD之间的依赖关系。
