@@ -120,6 +120,7 @@ RDD的数据本地性来源于file的partition的位置，task的perfer来源于
 # Job，Stage，Task
 ## DAG
 用来反映RDD之间的依赖关系。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/12d9ed994680447eb0d020aaac7e4a76.png)
 ## partition
 数据分区，一个RDD的数据可以被划分为多少个分区。Spark根据partition的数量来确定Task的数量。
 
@@ -130,6 +131,8 @@ RDD的数据本地性来源于file的partition的位置，task的perfer来源于
 
 ## stage
 是Job的基本调度单位，由**一组共享相同的Shuffle依赖关系的任务组成**。有一个job分割多个stage的的点在于shuffle，宽依赖Stage需要进行Shuffle操作，而窄依赖Stage则不需要。没有依赖关系的stage并行执行，有依赖关系的stage顺序执行。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/5b0551be007e4a86a46ce7b8994e6fae.png)
 
 比如某个job有一个reduceByKey，会被切分为两个stage。
   1. stage0: 从textFile到map，最后一步是**shuffle write**操作。我们可以简单理解为对pairs RDD中的数据进行分区操作，每个task处理的数据中，相同的key会写入同一个磁盘文件内。 
@@ -167,6 +170,7 @@ NarrowDependency被分到同一个stage，这样可以管道的形式迭代执�
 ## Task
 被发送到executor上的具体任务。每个Task负责计算一个分区的数据。可以分为需要shuffle的shuffleMapTask和resultTask。
 
+![在这里插入图片描述](https://img-blog.csdnimg.cn/a6fc792ca49a459bb7d4eeae71364757.png)
 
 一个Application由一个Driver和若干个Job构成，一个Job由多个Stage构成，一个Stage由多个没有Shuffle关系的Task组成。
 
@@ -185,6 +189,7 @@ NarrowDependency被分到同一个stage，这样可以管道的形式迭代执�
 
 一个RDD包括一个或者多个分区，每个分区实际上是一个数据集合片段。
 
+![在这里插入图片描述](https://img-blog.csdnimg.cn/1f03c7c353bf4245a720411a51dc3478.png)
 
 > 为什么需要RDD：基本模型并行容错，依赖划分需要，并行执行需要，容错需要。
 
