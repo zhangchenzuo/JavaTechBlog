@@ -20,6 +20,7 @@
   - [Task](#task)
 - [spark的数据结构](#spark的数据结构)
   - [RDD](#rdd)
+    - [容错机制](#容错机制)
     - [RDD持久化](#rdd持久化)
       - [persist/cache](#persistcache)
       - [如何选择一种最合适的持久化策略](#如何选择一种最合适的持久化策略)
@@ -171,6 +172,8 @@ RDD的数据本地性来源于file的partition的位置，task的perfer来源于
 2. 对于node和executor有黑名单机制，黑名单会有超时机制
 
 # spark的内存模型
+
+spark除了把内存作为计算资源以外，还作为了存储资源。MemoryManager负责管理。spark把内存划分为了堆内存和堆外内存。堆内存时JVM堆内存的一部分，堆外内存时工作节点中系统内存的一部分空间。内存可以被分为StorageMemoryPool和ExecutionMemoryPool。
 
 # Job，Stage，Task
 一个Application由一个Driver和若干个Job构成，一个Job由多个Stage构成，一个Stage由多个没有Shuffle关系的Task组成。
