@@ -50,6 +50,7 @@
   - [重写排序](#重写排序)
   - [最大公约数](#最大公约数)
 - [C++ 头文件](#c-头文件)
+  - [位运算](#位运算)
 - [c++ api](#c-api)
 # 算法思想
 ## 二分
@@ -1732,6 +1733,14 @@ static const auto io_sync_off = []()
     return nullptr;
 }();
 
+```
+## 位运算
+```cpp
+while(b != 0) { // 当进位为 0 时跳出
+    unsigned int c = (unsigned int)(a & b) << 1;  // c = 进位
+    a ^= b; // a = 非进位和
+    b = c; // b = 进位
+}
 ```
 # c++ api
 ```cpp
