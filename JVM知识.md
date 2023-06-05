@@ -21,7 +21,7 @@
   - [堆外内存的回收](#堆外内存的回收)
 - [HotSpot收集器](#hotspot收集器)
   - [Serial 串行收集器](#serial-串行收集器)
-  - [PaNew 并行收集器](#panew-并行收集器)
+  - [ParNew 并行收集器](#parnew-并行收集器)
   - [Parallel Scavenge收集器/Parallel Old](#parallel-scavenge收集器parallel-old)
   - [CMS收集器（并发收集器）](#cms收集器并发收集器)
   - [G1收集器](#g1收集器)
@@ -48,12 +48,8 @@
   - [内存交互](#内存交互)
   - [可见性、重排序、原子性](#可见性重排序原子性)
     - [线程安全](#线程安全)
-  - [锁优化](#锁优化)
-  - [自旋锁与自适应自旋](#自旋锁与自适应自旋)
-  - [锁消除](#锁消除)
-  - [锁粗化，轻量化锁，偏向锁](#锁粗化轻量化锁偏向锁)
   - [其他](#其他)
-    - [对象的创建](#对象的创建)
+    - [对象的创建过程](#对象的创建过程)
   - [类文件的结构](#类文件的结构)
   - [java是如何实现跨平台](#java是如何实现跨平台)
     - [字节码和源代码的区别](#字节码和源代码的区别)
@@ -74,7 +70,7 @@ JVM中内存分为五个主要的部分：堆，方法区  虚拟机栈，本地
 >线程共享
 ### Java堆
 
-存放对象实例和数组实例。GC主要操作的区域，因此被分为新生代与老年代。可以加上永久代**储存类信息，常量，静态变量**，即时编译器后的代码等数据，对这一区域而言一般不会进行垃圾回收。 
+存放对象实例和数组实例。GC主要操作的区域，因此被分为新生代与老年代
 - 分配对象的方法：指针碰撞和空闲列表，主要针对规整的空间的GC和不规整的需要额外维护一个空闲列表。
 - 堆上变量的访问方法：句柄法和直接指针法。 
 - 存在OOM。
@@ -93,7 +89,7 @@ Java世界里“几乎”所有的对象实例都在这里分配内存。如果�
 
 ### 方法区(也可以称为元空间/永久代)
 
-存储已被**虚拟机加载的类信息、常量、静态变量、运行时常量池**和即时编译器编译后的代码缓存等数据。与元空间相关。
+存储已被**虚拟机加载的类信息、常量、静态变量、运行时常量池**和即时编译器编译后的代码缓存等数据。对这一区域而言一般不会进行垃圾回收。 
  
 *  运行时常量池：方法区的一部分。存放编译期生成的各种**字面量**与**符号引用**，这部分内容将在类加载后存放到方法区的运行时常量池中。
   
@@ -153,8 +149,12 @@ Java世界里“几乎”所有的对象实例都在这里分配内存。如果�
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/b6f5072485c945f0ab85bd6395d97522.png?x-oss-process=image/watermark,type_ZHJvaWRzYW5zZmFsbGJhY2s,shadow_50,text_Q1NETiBAemN6NTU2NjcxOQ==,size_20,color_FFFFFF,t_70,g_se,x_16)
 
 
-绝大部分对象在 Eden 区生成，当 Eden 区装填满的时候，会触发 Young Garbage Collection，即 YGC。垃圾回收的时候，在 Eden 区实现清除策略，没有被引用的对象则直接回收。依然存活的对象会被移送到 Survivor 区。Survivor 区分为 so 和 s1 两块内存空间。每次 YGC 的时候，它们将存活的对象复制到未使用的那块空间，然后将当前正在使用的空间完全清除，交换两块空间的使用状态。如果 YGC 要移送的对象大于 Survivor 区容量的上限，则直接移交给老年代。在 JVM 中 －XX:MaxTenuringThreshold 参数就是来配置一个对象从新生代晋升到老年代的阈值。默认值是 15，可以在 Survivor 区交换 14 次之后，晋升至老年代。
-
+1. 绝大部分对象在 Eden 区生成，当 Eden 区装填满的时候，会触发 Young Garbage Collection，即 YGC。
+2. 垃圾回收的时候，在 Eden 区实现清除策略，没有被引用的对象则直接回收。依然存活的对象会被移送到 Survivor 区。
+3. Survivor 区分为 so 和 s1 两块内存空间。每次 YGC 的时候，它们将存活的对象复制到未使用的那块空间，然后将当前正在使用的空间完全清除，交换两块空间的使用状态。
+4. 如果 YGC 要移送的对象大于 Survivor 区容量的上限，则直接移交给老年代（分配担保）。
+5. 在多次垃圾回收后，仍然存活的对象会被晋升到老年代。在 JVM 中 －XX:MaxTenuringThreshold 参数就是来配置一个对象从新生代晋升到老年代的阈值。默认值是 15，可以在 Survivor 区交换 14 次之后，晋升至老年代。
+6. 老年代中的垃圾回收称为Major GC或Full GC，它是对整个堆内存进行回收的过程。Major GC的触发条件可以是老年代空间不足、显式调用System.gc()等。
 # 垃圾回收基础
 * 什么是垃圾：内存中不在被使用到的内存空间就是垃圾。
 
@@ -284,7 +284,7 @@ JDK中使用DirectByteBuffer对象来表示堆外内存，每个DirectByteBuffer
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/20201017153034521.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70#pic_center)
 
 
-## PaNew 并行收集器
+## ParNew 并行收集器
 是Serial收集器的多线程并行版本。服务端Server模式下首选的新生代收集器。和CMS配合。
 
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/20201017153519909.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70#pic_center)
@@ -506,30 +506,8 @@ volatile关键字，这部分内容可以见并发内容的复习。
 * 互斥同步时安全的，synchronized和reentrantlock
 * 非互斥同步，乐观锁的方法。有冲突就回退。
 
-## 锁优化
-## 自旋锁与自适应自旋
-* 自旋：如果线程可以很快获得锁，那么可以不挂起线程，而是让线程进行几个忙循环。节省线程挂起和切换的时间。
-* 自适应自旋：自旋时间不再固定，而是由前一个在同一个锁的自旋时间和当前锁的状态绝对。
-
-## 锁消除
-* 在编译代码时候，检测到不存在数据竞争，JVM会锁消除。`-XX:+EliminteLocks`开启，并且需要逃逸分析`-XX:+DoEscapeAnalisis`
-
-* 逃逸分析：方法中定义的对象可能别外部方法引用，称为方法逃逸；如果对象可能被外部线程访问，称为线程逃逸。如赋值给类变量或者可以在其他线程中仿真的实例变量。
-
-
-## 锁粗化，轻量化锁，偏向锁
-锁粗化：建议加到锁的同步范围扩大。合并多个synchronized
-
-轻量化锁：优先使用乐观锁，如果失败升级为重量级锁。
-
-偏向锁：在无竞争时，直接取消了锁。
-
-![在这里插入图片描述](https://img-blog.csdnimg.cn/20201018164558158.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3pjejU1NjY3MTk=,size_16,color_FFFFFF,t_70#pic_center)
-
-
-
 ## 其他
-### 对象的创建
+### 对象的创建过程
 
 
 JVM遇到字节码new之后，首先检查这个指令的参数是否能在常量池中定位到一个类的符号引用，并且检查这个符号引用代表的类是否已被加载、解析和初始化过。如果没有，那必须**先执行相应的类加载过程**。
@@ -541,7 +519,11 @@ JVM遇到字节码new之后，首先检查这个指令的参数是否能在常�
 
 最后**内存空间都初始化为零值,设置对象头，执行`<init>`方法。**
 
-![java创建对象](https://raw.githubusercontent.com/Snailclimb/JavaGuide/master/docs/java/jvm/pictures/java%E5%86%85%E5%AD%98%E5%8C%BA%E5%9F%9F/Java%E5%88%9B%E5%BB%BA%E5%AF%B9%E8%B1%A1%E7%9A%84%E8%BF%87%E7%A8%8B.png)
+1. 类加载检查
+2. 分配内存
+3. 初始化零值
+4. 设置对象头
+5. 执行init方法
 
 
 ## 类文件的结构
