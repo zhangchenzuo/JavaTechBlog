@@ -1,6 +1,9 @@
 - [spark 框架和运行原理](#spark-框架和运行原理)
   - [Spark组件](#spark组件)
   - [运行框架，基本架构](#运行框架基本架构)
+  - [Driver上的执行环境--SparkContext](#driver上的执行环境--sparkcontext)
+  - [Executor的执行环境--SparkEnv](#executor的执行环境--sparkenv)
+  - [几种不同的部署方法](#几种不同的部署方法)
   - [集群运行（描述spark里一个任务的执行过程）](#集群运行描述spark里一个任务的执行过程)
 - [Job，Stage，Task](#jobstagetask)
   - [DAG](#dag)
@@ -8,30 +11,39 @@
   - [Job](#job)
   - [stage](#stage)
     - [依赖划分原则](#依赖划分原则)
+    - [宽窄依赖](#宽窄依赖)
   - [Task](#task)
 - [spark的数据结构](#spark的数据结构)
   - [RDD](#rdd)
+    - [容错机制](#容错机制)
     - [RDD持久化](#rdd持久化)
+      - [persist/cache](#persistcache)
       - [如何选择一种最合适的持久化策略](#如何选择一种最合适的持久化策略)
+      - [两种操作](#两种操作)
   - [DataFrame](#dataframe)
   - [DataSet](#dataset)
   - [三种数据结构的对比](#三种数据结构的对比)
   - [分布共享变量](#分布共享变量)
     - [累加器 只写](#累加器-只写)
     - [广播变量 只读](#广播变量-只读)
+- [Shuffle](#shuffle)
+  - [shuffle优化](#shuffle优化)
+  - [partitioner](#partitioner)
+  - [聚合类算子](#聚合类算子)
 - [与MR对比](#与mr对比)
   - [优点](#优点)
 - [Spark调优](#spark调优)
-  - [开发调优](#开发调优)
+  - [开发调优——（适当持久化，shuffle类算子使用优化，broadcast，更好的算子使用）](#开发调优适当持久化shuffle类算子使用优化broadcast更好的算子使用)
   - [资源调优](#资源调优)
   - [数据倾斜调优](#数据倾斜调优)
     - [现象和原理](#现象和原理)
-    - [优化方案](#优化方案)
+    - [优化方案——数据倾斜 / join调优](#优化方案数据倾斜--join调优)
   - [shuffle调优](#shuffle调优)
     - [HashShuffleManager](#hashshufflemanager)
       - [shuffleWrite/shuffleRead](#shufflewriteshuffleread)
   - [sortShuffleManager](#sortshufflemanager)
 - [其他问题](#其他问题)
+  - [Spark程序执行，有时候默认为什么会产生很多task，怎么修改默认task执行个数？](#spark程序执行有时候默认为什么会产生很多task怎么修改默认task执行个数)
   - [为什么shuffle性能差/shuffle发生了什么](#为什么shuffle性能差shuffle发生了什么)
   - [spark的序列化问题](#spark的序列化问题)
   - [描述一下spark的运行过程和原理](#描述一下spark的运行过程和原理)
@@ -47,13 +59,13 @@
     - RPC框架：早期用的Akka，后期改成了Netty实现。
     - ListenerBus：监听器模式异步调用的实现
     - 度量系统：监控各个组件的运行。
-  - SparkContext：![在这里插入图片描述](https://img-blog.csdnimg.cn/ced591c1b33143b292e70fd43fa4153b.png)
+  - SparkContext：driver的运行环境
   - SparkEnv：spark的运行时环节。提供Executor运行环境。
   - 存储体系：BlockManager
   - 调度系统：
     - DAGScheduler：负责创建Job；将DAG中的RDD划分到不同的Stage；给Stage创建对应的Task；批量提奖Task。
     - TaskScheduler：按照FIFO或者FAIR等调度算法对批量Task进行调度；为task分配资源；将Task发送到Executor上执行。
-  - 计算引擎：
+  - 计算引擎：shuffleManager
   - ExecutorAllocationManager：基于工作负载动态分配和删除executor。定时调度，计算需要的executor数量。
 
 - Spark SQL：
@@ -62,28 +74,72 @@ Spark Sql 是Spark来**操作结构化数据的程序包**，可以使用SQL语�
 ## 运行框架，基本架构
 
 master/worker指的是资源的调度层面，申请内存等。driver/executor则是在任务的执行调度层面。
+
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/5b90bf1d96c54e3099ffe06093cded08.png)
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/7d5f1c3b621c4e3a80af25c4e771f01f.png)
-- Cluster Manager（master）：控制整个集群，监控worker。在standalone模式中即为Master主节点，控制整个集群，监控worker。在YARN模式中为资源管理器
 
-Cluster Manager负责对各个Worker上内存，CPU等资源的分配给application，但是不负责对executor分配资源。
+
+- Master/Cluster Manager：控制整个集群，监控worker。对各个Worker上内存，CPU等资源的分配给application，但是不负责对executor分配资源。
+在standalone模式中即为Master主节点，控制整个集群，监控worker。在YARN模式中为资源管理器。
 
 - Worker：
-从节点，受Cluster Manager资源管理，负责控制计算节点，启动Executor（或者Driver）。集群中任何一个可以运行spark应用代码的节点。**Worker就是物理节点**，可以在上面**启动Executor/worker进程**。一个worker上的memory、cpu由多个executor共同分摊。
+从节点，受Cluster Manager资源管理，负责控制计算节点，启动Executor（或者Driver）。集群中任何一个可以运行spark应用代码的节点。**Worker就是物理节点**，可以在上面**启动Executor/driver进程**。一个worker上的memory、cpu由多个executor共同分摊。
 
-  - Driver：
-  运行Application的main函数并**创建SparkContext**，**准备Spark应用程序的运行环境**。在Spark中由SparkContext负责与Cluster Manager通信，**进行资源申请、任务的分配和监控**等，当Executor部分运行完毕后，Driver同时负责**将SparkContext关闭**。
-    1. 将用户程序转化为任务：程序从输入数据创建一些系列RDD，使用转化操作派生出新的RDD，最后使用行动操作收集或者存储结果RDD数据。实际上是隐式的创建了一个由操作组成的逻辑上的**有向无环图（Directed Acyclic Graph， DAG）**。当驱动器运行时，会转化为物理执行计划。
+- Driver：运行Application的main函数并**创建SparkContext**，**准备Spark应用程序的运行环境**。
+  
+  在Spark中由SparkContext负责与Cluster Manager通信，**进行资源申请、任务的分配和监控**等；当Executor部分运行完毕后，Driver同时负责**将SparkContext关闭**。
+    1. 作业解析：将用户程序转化为任务。程序从输入数据创建一些系列RDD，使用转化操作派生出新的RDD，最后使用行动操作收集或者存储结果RDD数据。实际上是隐式的创建了一个由操作组成的逻辑上的**有向无环图（Directed Acyclic Graph， DAG）**。当驱动器运行时，会转化为物理执行计划。
     2. 为执行器节点调度任务：执行器启动后会向驱动器注册自己，每个执行器节点都代表一个能够执行任务和存储RDD数据的进程。执行器会把任务基于数据所在位置分配给合适的执行器进程。任务执行时，执行器会缓存这些数据，驱动器会跟踪这些数据的缓存位置，并利用这些信息来调度以后的任务，以减少网络传输。
 
 
-  - Executor：
-  在每个Worker上为某应用启动的一个**JVM进程**，该进程**负责运行Task，并且负责将数据存在内存或者磁盘上**，每个任务都有各自独立的Executor。Executor是一个执行Task的容器。任务相互独立，即使其他的执行器节点有崩溃也不会影响自身。它的主要职责是：
-    1. 负责执行组成spark应用的任务，并将结果返回给驱动器进程
-    2. 通过自身的Block Manager，为用户进程中要求缓存RDD提供内存式存储，RDD直接缓存在执行器内存中。
+- Executor：
+在每个Worker上为某应用启动的一个**JVM进程**，该进程**负责运行Task，并且负责将数据存在内存或者磁盘上**，每个任务都有各自独立的Executor。Executor是一个执行Task的容器。任务相互独立，即使其他的执行器节点有崩溃也不会影响自身。它的主要职责是：
+  1. 负责执行组成spark应用的任务，并将结果返回给驱动器进程
+  2. 通过自身的Block Manager，为用户进程中要求缓存RDD提供内存式存储，RDD直接缓存在执行器内存中。
 
-- 每个Application都有自己专属的Executor进程，并且该进程在Application运行期间一直驻留。**Executor进程以多线程的方式运行Task**。
-- Spark运行过程与资源管理器无关，只要能够获取Executor进程并保存通信即可。
+  每个Application都有自己专属的Executor进程，并且该进程在Application运行期间一直驻留。**Executor进程以多线程的方式运行Task**。
+
+## Driver上的执行环境--SparkContext
+Spark执行环境。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/df2798227e8348acb7e7d846d6f66a16.png)
+
+核心的几个：
+- SparkEnv：其实是executor的执行环境。但是local模式下也需要。
+- DAGScheduler: 提交Job，切分stage，发送给TaskScheduler
+- TaskScheduler: 调度task
+  
+## Executor的执行环境--SparkEnv
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/ddd6fd6a202c4aefb25a82d75754d801.png)
+- RPC环境
+- 序列化管理器 SerializerManager
+- 广播管理器 BroadcastManager
+- map任务输出追踪器 MapOutputTrackerManager
+- 输出提交协调器 OutputCommitCoordinator
+- BlockManager、BlockManagerMaster 等存储体系。
+- MemoryManager
+- ShuffleManager
+## 几种不同的部署方法
+本地模式
+
+    Spark不一定非要跑在hadoop集群，可以在本地，起多个线程的方式来指定。方便调试，本地模式分三类
+        local：只启动一个executor
+        local[k]: 启动k个executor
+        local：启动跟cpu数目相同的 executor
+
+standalone模式
+
+    分布式部署集群，自带完整的服务，资源管理和任务监控是Spark自己监控，这个模式也是其他模式的基础
+
+Spark on yarn模式
+
+    分布式部署集群，资源和任务监控交给yarn管理
+    粗粒度资源分配方式，包含cluster和client运行模式
+        cluster 适合生产，driver运行在集群子节点，具有容错功能
+        client 适合调试，dirver运行在客户端
+
+Spark On Mesos模式
+
 ## 集群运行（描述spark里一个任务的执行过程）
 （分区的数量取决于partition数量的设定，每个分区的数据只会在一个task中计算。）
 
@@ -98,11 +154,16 @@ Cluster Manager负责对各个Worker上内存，CPU等资源的分配给applicat
 
 
 # Job，Stage，Task
+一个Application由一个Driver和若干个Job构成，一个Job由多个Stage构成，一个Stage由多个没有Shuffle关系的Task组成。
 ## DAG
 用来反映RDD之间的依赖关系。
 ## partition
+
 数据分区，一个RDD的数据可以被划分为多少个分区。Spark根据partition的数量来确定Task的数量。
 
+分区太少，会导致较少的并发、数据倾斜、或不正确的资源利用。分区太多，导致任务调度花费比实际执行时间更多的时间。若没有配置分区数，默认的分区数是：所有执行程序节点上的内核总数。
+
+一般一个core上由2-4个分区。
 ## Job
 用户提交的作业。当RDD及其DAG被提交给DAGScheduler以后，DAGScheduler会将RDD的transform和action都视为一个job。
 
@@ -118,8 +179,9 @@ Cluster Manager负责对各个Worker上内存，CPU等资源的分配给applicat
 ### 依赖划分原则
 NarrowDependency被分到同一个stage，这样可以管道的形式迭代执行，ShuffleDependency需要依赖多个分区。
 
-容灾的角度：Narrow只需要重新执行父RDD的丢失分区的计算即可恢复，shuffle需要考虑回复所有父RDD的丢失分区。
+容灾的角度：Narrow只需要重新执行父RDD的丢失分区的计算即可恢复，shuffle需要考虑恢复所有父RDD的丢失分区。
 
+### 宽窄依赖
 - 窄依赖：
 指**父RDD的每一个分区最多被一个子RDD的分区所用**，表现为一个父RDD的分区对应于一个子RDD的分区，和两个父RDD的分区对应于一个子RDD 的分区。
 子RDD依赖与父RDD中固定的Partiton，分为OneToOneDependency和RangeDependency
@@ -144,10 +206,10 @@ NarrowDependency被分到同一个stage，这样可以管道的形式迭代执�
   - 在一个Job里必定有该类型Stage
   
 ## Task
-被发送到executor上的具体任务。每个Task负责计算一个分区的数据。可以分为需要shuffle的shuffleMapTask和resultTask。
+被发送到executor上的具体任务。每个Task负责计算一个分区的数据。
 
+Task可以分为需要shuffle的**shuffleMapTask**和**resultTask**。
 
-一个Application由一个Driver和若干个Job构成，一个Job由多个Stage构成，一个Stage由多个没有Shuffle关系的Task组成。
 
 用户提交的Job会提交给DAGScheduler，Job会被分解成Stage，Stage会被细化成Task，Task简单的说就是在一个数据partition上的单个数据处理流程。
 
@@ -166,10 +228,39 @@ NarrowDependency被分到同一个stage，这样可以管道的形式迭代执�
 
 
 > 为什么需要RDD：基本模型并行容错，依赖划分需要，并行执行需要，容错需要。
+
+>弹性
+
+1. 内存的弹性：内存与磁盘的自动切换
+2. 容错的弹性：数据丢失可以自动恢复
+3. 计算的弹性：计算出错重试机制
+4. 分片的弹性：根据需要重新分片 
+### 容错机制
+RDD的容错，主要是从保存了依赖关系上体现的。
+
+　Spark框架层面的容错机制，主要分为三大层面（调度层、RDD血统层、Checkpoint层），在这三大层面中包括Spark RDD容错四大核心要点。
+
+1. Stage输出失败，上层调度器DAGScheduler重试。
+2. Spark计算中，Task内部任务失败，底层调度器重试。
+3. RDD Lineage血统中窄依赖、宽依赖计算。
+4. Checkpoint缓存。 checkpoint通过将RDD写入Disk作检查点，是Spark lineage容错的辅助，lineage过长会造成容错成本过高，这时在中间阶段做检查点容错，如果之后有节点出现问题而丢失分区，从做检查点的RDD开始重做Lineage，就会减少开销。
 ### RDD持久化
+
+在适当的位置persist/cache持久化RDD，可以防止重复计算。因为RDD是懒计算的，所以我们cache会分叉的RDD，可以防止这个RDD之前的流程再重复计算一遍。
+
 让spark持久化存储一个RDD，计算出的RDD节点会分别保存它们所求出的分区数据。如果一个有持久化数据的节点发生故障，spark会在需要缓存数据时候重算。默认情况下，`persist()`会把数据以**序列化的形式缓存在JVM的堆空间**中。也可以通过改变参数，存在硬盘上。
 
 持久化级别：https://tech.meituan.com/2016/04/29/spark-tuning-basic.html
+
+#### persist/cache
+cache和persist都是用于缓存RDD，避免重复计算.
+.cache() == .persist(MEMORY_ONLY)
+
+>cache后面能不能接其他算子,它是不是action操作？
+
+
+可以接其他算子，但是接了算子之后，起不到缓存应有的效果，因为会重新触发cache。
+cache不是action操作
 
 #### 如何选择一种最合适的持久化策略
 默认情况下，性能最高的当然是**MEMORY_ONLY**，但前提是你的内存必须足够足够大。因为不进行序列化与反序列化操作，就避免了这部分的性能开销；对这个RDD的后续算子操作，都是基于纯内存中的数据的操作，不需要从磁盘文件中读取数据，性能也很高；而且不需要复制一份数据副本，并远程传送到其他节点上。但是使用场景非常有限
@@ -180,7 +271,11 @@ NarrowDependency被分到同一个stage，这样可以管道的形式迭代执�
 
 通常不建议使用DISK_ONLY和后缀为_2的级别：因为完全基于磁盘文件进行数据的读写，会导致性能急剧降低，有时还不如重新计算一次所有RDD。后缀为_2的级别，必须将所有数据都复制一份副本，并发送到其他节点上，数据复制以及网络传输会导致较大的性能开销，除非是要求作业的高可用性，否则不建议使用。
 
-- DAG：有向无环图，反应了RDD之间的依赖关系。
+
+#### 两种操作
+- action：对RDD真正执行计算。collect、reduce、foreach、count
+- Transformation：对RDD进行转换
+- Controller：对性能效率和容错方面的支持。persist , cache, checkpoint
 ## DataFrame
 Dataframe也是一种不可修改的分布式数据集合，它可以按列查询数据，可以当成数据库里面的表看待。可以对**数据指定数据模式**（schema）。也就是说DataFrame是Dataset[row]的一种形式
 ## DataSet
@@ -204,11 +299,53 @@ Dataset是DataFrame的扩展，它提供了类型安全，面向对象的编程�
 
 而累加器是一个共享变量，将工作节点中的值聚合到驱动器程序中。比如可以用于统计节点中出现错误的行数。
 
+- 全局的，只增不减，记录全局集群的唯一状态
+- 在exe中修改它，在driver读取
+- executor级别共享的，广播变量是task级别的共享
+- 两个application不可以共享累加器，但是同一个app不同的job可以共享
+
+
 ### 广播变量 只读
 广播变量可以高效的向所有工作节点发送一个较大的只读值或者表。
 
 spark会自动将闭包中的变量都复制并发送到工作节点上，这样会低效。其实多个工作节点可以共用同一个表变量。
 
+
+# Shuffle
+某种具有共同特征的数据汇聚到一个计算节点上进行计算
+
+Spark中，Shuffle是指将数据重新分区（partition）和重新组合的过程。
+
+Shuffle操作涉及以下几个主要步骤：
+
+shuffle写：在Shuffle阶段，Spark将根据键（Key）对数据进行重新分区，将具有相同键的数据发送到同一分区。这个过程涉及数据的传输和网络通信，因为具有相同键的数据可能来自于不同的分区。
+
+shuffle读：在Reduce阶段，Spark将在每个分区上对相同键的数据进行聚合、排序或其他操作，以生成最终结果。
+
+## shuffle优化
+
+节点本地性（Node Locality）：Spark尽可能地在同一节点上进行Shuffle操作，以减少数据在网络中的传输。这可以通过合理的分区策略和任务调度来实现。
+
+压缩（Compression）：Spark支持在Shuffle过程中对数据进行压缩，减少网络传输的数据量，从而提高性能和效率。
+
+聚合（Aggregation）：当可能时，Spark会在Map阶段对具有相同键的数据进行本地聚合，以减少Shuffle阶段的数据量。
+
+Sort-based Shuffle：Spark默认使用Sort-based Shuffle算法来进行数据的重新分区和排序。这种算法在性能和内存使用之间进行平衡，能够有效地处理大规模数据。
+
+## partitioner
+Partitioner只对键值对类型的RDD有效，即PairRDD（例如(key, value)形式的RDD）
+
+Partitioner是用于对RDD进行分区的对象，它定义了数据在分布式环境中如何划分和分配到不同的计算节点上。Spark提供了几种内置的Partitioner，包括：
+
+- HashPartitioner（哈希分区器）：根据键的哈希值进行分区。默认情况下，Spark的groupByKey和reduceByKey等操作会使用HashPartitioner。弊端是数据不均匀，容易导致数据倾斜
+
+- RangePartitioner（范围分区器）：根据键的排序范围进行分区。适用于已经排序的数据集，例如sortByKey操作。
+
+- Custom Partitioner（自定义分区器）：可以根据特定需求自定义分区逻辑的分区器。通过继承org.apache.spark.Partitioner类并实现必要的方法来创建自定义分区器。
+
+## 聚合类算子
+
+尽量避免使用shuffle类算子。也就是将分布在集群中多个节点上的同一个key，拉取到同一个节点上，进行聚合或join等操作。比如reduceByKey、join、distinct、repartition等算子。尽量使用map类的非shuffle算子。
 # 与MR对比
 ## 优点
 Spark速度更快，因为可以使用多线程并且可以使用内存加速计算。
@@ -219,7 +356,7 @@ Spark速度更快，因为可以使用多线程并且可以使用内存加速计
 4. 可选的shuffle排序：MapReduce在shuffle前有固定的排序操作，但是spark可以根据不同的场景选在map端还是在reduce端。
 # Spark调优
 总体的思路包括，开发调优、资源调优、数据倾斜调优、shuffle调优。
-## 开发调优
+## 开发调优——（适当持久化，shuffle类算子使用优化，broadcast，更好的算子使用）
 1. 开发时，对于同一份数据源，只应该创建一个RDD，不能创建多个RDD来代表同一份数据。
 2. 对多次使用的RDD进行持久化，将RDD中的数据保存到内存或者磁盘中。保证对一个RDD执行多次算子操作时，这个RDD本身仅仅被计算一次。
   Spark中对于一个RDD执行多次算子的默认原理是这样的：每次对一个RDD执行一个算子时，都会重新从源头计算一遍得到RDD，然后再对这个RDD执行你的算子操作。这种方式的性能是很差的。
@@ -228,14 +365,14 @@ Spark速度更快，因为可以使用多线程并且可以使用内存加速计
 
 3. 尽量避免使用shuffle类算子。也就是将分布在集群中多个节点上的同一个key，拉取到同一个节点上，进行聚合或join等操作。比如reduceByKey、join、distinct、repartition等算子。尽量使用map类的非shuffle算子。
   
-  一个可能的思路，对小表进行broadcast，进而避免shuffle join。
+    一个可能的思路，对小表进行broadcast，进而避免shuffle join。
 
 4. 广播外部变量
    遇到需要在算子函数中使用**外部变量**的场景（尤其是大变量，比如100M以上的大集合），那么此时就应该使用Spark的广播（Broadcast）功能来提升性能。
 
-在算子函数中使用到外部变量时，默认情况下，Spark会将该变量复制多个副本，通过网络传输到**task**中，此时每个task都有一个变量副本。如果变量本身比较大的话（比如100M，甚至1G），那么大量的变量副本在网络中传输的性能开销，以及在各个节点的Executor中占用过多内存导致的频繁GC，都会极大地影响性能。
+    在算子函数中使用到外部变量时，默认情况下，Spark会将该变量复制多个副本，通过网络传输到**task**中，此时每个task都有一个变量副本。如果变量本身比较大的话（比如100M，甚至1G），那么大量的变量副本在网络中传输的性能开销，以及在各个节点的Executor中占用过多内存导致的频繁GC，都会极大地影响性能。
 
-广播后的变量，会保证**每个Executor的内存中，只驻留一份变量副本**。在算子函数用广播变量时，首先会判断当前task所在Executor内存中，是否有变量副本。如果有则直接使用；如果没有则从Driver或者其他Executor节点上远程拉取一份放到本地Executor内存中。而Executor中的task执行时共享该Executor中的那份变量副本。这样的话，可以大大减少变量副本的数量，从而**减少网络传输的性能开销，并减少对Executor内存的占用开销，降低GC的频率**。
+    广播后的变量，会保证**每个Executor的内存中，只驻留一份变量副本**。在算子函数用广播变量时，首先会判断当前task所在Executor内存中，是否有变量副本。如果有则直接使用；如果没有则从Driver或者其他Executor节点上远程拉取一份放到本地Executor内存中。而Executor中的task执行时共享该Executor中的那份变量副本。这样的话，可以大大减少变量副本的数量，从而**减少网络传输的性能开销，并减少对Executor内存的占用开销，降低GC的频率**。
 
 5. 使用更好的算子：
    1. 使用reduceByKey/aggregateByKey替代groupByKey，因为可以有预聚合。
@@ -245,12 +382,12 @@ Spark速度更快，因为可以使用多线程并且可以使用内存加速计
   
   ## 资源调优
 - **num-executors**：设置Spark作业总共要用多少个Executor进程来执行。Driver在向YARN集群管理器申请资源时，YARN集群管理器会尽可能按照你的设置来在集群的各个工作节点上，启动相应数量的Executor进程。设置的太少，无法充分利用集群资源；设置的太多的话，大部分队列可能无法给予充分的资源。
-- executor-memory：每个Executor进程的内存。Executor内存的大小，很多时候直接决定了Spark作业的性能，而且跟常见的JVM OOM异常，也有直接的关联。num-executors乘以executor-memory，是不能超过队列的最大内存量的。
-- executor-cores：每个Executor进程的CPU core数量。这个参数决定了每个Executor进程并行执行task线程的能力。因为每个CPU core同一时间只能执行一个task线程，因此每个Executor进程的CPU core数量越多，越能够快速地执行完分配给自己的所有task线程。可以和物理机器的内存和core比例匹配。
-- driver-memory：Driver进程的内存。如果需要使用collect算子将RDD的数据全部拉取到Driver上进行处理，那么必须确保Driver的内存足够大，否则会出现OOM内存溢出的问题。
+- `executor-memory`：每个Executor进程的内存。Executor内存的大小，很多时候直接决定了Spark作业的性能，而且跟常见的JVM OOM异常，也有直接的关联。num-executors乘以executor-memory，是不能超过队列的最大内存量的。
+- `executor-cores`：每个Executor进程的CPU core数量。这个参数决定了每个Executor进程并行执行task线程的能力。因为每个CPU core同一时间只能执行一个task线程，因此每个Executor进程的CPU core数量越多，越能够快速地执行完分配给自己的所有task线程。可以和物理机器的内存和core比例匹配。
+- `driver-memory`：Driver进程的内存。如果需要使用collect算子将RDD的数据全部拉取到Driver上进行处理，那么必须确保Driver的内存足够大，否则会出现OOM内存溢出的问题。
 - **spark.default.parallelism**：500～1000 设置每个stage的默认task数量。这个参数极为重要，如果不设置可能会直接影响你的Spark作业性能。如果不去设置这个参数，那么此时就会导致Spark自己根据底层HDFS的block数量来设置task的数量，默认是一个HDFS block对应一个task。Spark官网建议的设置原则是，设置该参数为num-executors * executor-cores的2~3倍较为合适
-- spark.storage.memoryFraction：设置RDD持久化数据在Executor内存中能占的比例，默认是0.6。如果Spark作业中，有较多的**RDD持久化操作**，该参数的值可以适当提高一些，保证持久化的数据能够容纳在内存中。避免内存不够缓存所有的数据，导致数据只能写入磁盘中，降低了性能。但是如果Spark作业中的**shuffle类操作比较多**，而持久化操作比较少，那么这个参数的值适当降低一些比较合适。此外，如果发现作业由于**频繁的gc**导致运行缓慢（通过spark web ui可以观察到作业的gc耗时），意味着**task执行用户代码的内存**不够用，那么同样建议调低这个参数的值。
-- spark.shuffle.memoryFraction：shuffle过程中一个task拉取到上个stage的task的输出后，进行聚合操作时能够使用的Executor内存的比例，默认是0.2。shuffle操作在进行聚合时，如果发现使用的内存超出了这个20%的限制，那么多余的数据就会溢写到磁盘文件中去，此时就会极大地降低性能。此外，如果发现作业由于频繁的gc导致运行缓慢，意味着task执行用户代码的内存不够用，那么同样建议调低这个参数的值。
+- `spark.storage.memoryFraction`：设置RDD持久化数据在Executor内存中能占的比例，默认是0.6。如果Spark作业中，有较多的**RDD持久化操作**，该参数的值可以适当提高一些，保证持久化的数据能够容纳在内存中。避免内存不够缓存所有的数据，导致数据只能写入磁盘中，降低了性能。但是如果Spark作业中的**shuffle类操作比较多**，而持久化操作比较少，那么这个参数的值适当降低一些比较合适。此外，如果发现作业由于**频繁的gc**导致运行缓慢（通过spark web ui可以观察到作业的gc耗时），意味着**task执行用户代码的内存**不够用，那么同样建议调低这个参数的值。
+- `spark.shuffle.memoryFraction`：shuffle过程中一个task拉取到上个stage的task的输出后，进行聚合操作时能够使用的Executor内存的比例，默认是0.2。shuffle操作在进行聚合时，如果发现使用的内存超出了这个20%的限制，那么多余的数据就会溢写到磁盘文件中去，此时就会极大地降低性能。此外，如果发现作业由于频繁的gc导致运行缓慢，意味着task执行用户代码的内存不够用，那么同样建议调低这个参数的值。
 
 
 
@@ -266,7 +403,7 @@ Spark作业看起来会运行得非常缓慢，甚至可能因为某个task处�
 
 在进行shuffle的时候，必须将各个节点上相同的key拉取到某个节点上的一个task来进行处理。比如按照key进行聚合或join等操作。此时如果某个key对应的数据量特别大的话，就会发生数据倾斜。比如大部分key对应10条数据，但是个别key却对应了100万条数据，那么大部分task可能就只会分配到10条数据，然后1秒钟就运行完了；但是个别task可能分配到了100万数据，要运行一两个小时。因此，整个Spark作业的运行进度是由运行时间最长的那个task决定的。
 
-### 优化方案
+### 优化方案——数据倾斜 / join调优
 1. 预处理数据：在spark之前处理数据。保证spark运行效率。
 2. 过滤少数倾斜Key：某些key异常的数据较多。可以动态判定哪些key的数据量最多然后再进行过滤，那么可以使用sample算子对RDD进行采样，然后计算出每个key的数量，取数据量最多的key过滤掉即可。
 3. 提高shuffle并行度：`spark.sql.shuffle.partitions`代表了shuffle read task的并行度，默认是200比较小。增加shuffle read task的数量，可以让原本分配给一个task的多个key分配给多个task，从而让每个task处理比原来更少的数据。（方案对于某个key倾斜不适用，因为这个key还是被打到了某一个task）
@@ -320,6 +457,10 @@ bypass运行机制的触发条件如下：
 
 相关参数：https://tech.meituan.com/2016/05/12/spark-tuning-pro.html
 # 其他问题
+## Spark程序执行，有时候默认为什么会产生很多task，怎么修改默认task执行个数？
+
+- 有很多小文件的时候，有多少个输入block就会有多少个task启动
+- spark中有partition的概念，每个partition都会对应一个task，task越多，在处理大规模数据的时候，就会越有效率
 ## 为什么shuffle性能差/shuffle发生了什么
 1. 各个节点上的相同key都会先写入本地磁盘文件中，然后
 2. 其他节点需要通过网络传输拉取各个节点上的磁盘文件中的相同key。

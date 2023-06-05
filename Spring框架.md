@@ -1,7 +1,7 @@
 - [什么是 Spring 框架?](#什么是-spring-框架)
   - [列举一些重要的Spring模块？](#列举一些重要的spring模块)
       - [3. @RestController vs @Controller](#3-restcontroller-vs-controller)
-- [Spring IOC & AOP](#spring-ioc--aop)
+- [Spring IOC \& AOP](#spring-ioc--aop)
   - [IoC](#ioc)
     - [Q: @Autowired存在多个同一类型的bean，怎么选择哪一个来注入？](#q-autowired存在多个同一类型的bean怎么选择哪一个来注入)
   - [AOP](#aop)
@@ -57,8 +57,7 @@
 
 # 什么是 Spring 框架?
 
-Spring 是一种轻量级开发框架，提高开发效率以及系统的可维护性。。
-
+Spring 是一种轻量级开发框架，提高开发效率以及系统的可维护性。通过 **依赖注入**实现了**控制反转** 和 **面向切面编程**。
 Spring 官网列出的 Spring 的 6 个特征:
 
 - **核心技术** ：**依赖注入(DI)，AO**P，事件(events)，资源，i18n，验证，数据绑定，类型转换，SpEL。
