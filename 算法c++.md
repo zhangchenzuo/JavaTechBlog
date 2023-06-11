@@ -2,6 +2,7 @@
   - [二分](#二分)
     - [STL 二分库函数](#stl-二分库函数)
   - [前缀和，后缀和与差分](#前缀和后缀和与差分)
+  - [双指针](#双指针)
   - [dp](#dp)
     - [线性dp（字符串编辑距离）](#线性dp字符串编辑距离)
     - [区间dp（合并石子，最长回文子序列）](#区间dp合并石子最长回文子序列)
@@ -210,6 +211,10 @@ bool isCovered(vector<vector<int>>& ranges, int left, int right) {
         return ans;
     }
 ```
+## 双指针
+典型题目 [接雨水](https://leetcode.cn/problems/trapping-rain-water/), [盛最多水的容器](https://leetcode.cn/problems/container-with-most-water/)
+
+利用双指针，找到这类接水问题的最短的位置，然后作为当前的高度。
 ## dp
 ### 线性dp（字符串编辑距离）
 
@@ -1488,7 +1493,7 @@ int main(){
 
 另外会有类似的，分组背包->其实就是多重背包，二维背包->其实就是额外多了一个可以倒序遍历的维度。
 
-在进一步是求解背包的方案数问题，最简单的方案数问题，与权值无关。**求醉最优方案的方案数**我们需要额外的维护dp数组和方案数数组，我们需要知道当前的最优方案是如何转换得到的，并且进行加和得到最优解的方案数。
+在进一步是求解背包的方案数问题，最简单的方案数问题，与权值无关。**求最优方案的方案数**我们需要额外的维护dp数组和方案数数组，我们需要知道当前的最优方案是如何转换得到的，并且进行加和得到最优解的方案数。
 
 有依赖的树型背包问题，需要使用dfs，首先完善出来子树的dp情况，在计算根节点的最优。自下而上的01背背包。
 
@@ -1704,7 +1709,14 @@ priority_queue<int, vector<int>, greater<int>> pq; // 得到的是小顶堆，to
 // sort函数是相反的，得到的是小的在前。
 sort(sql.begin(), sql.end(), cmp);
 
+//
+struct cmp{
+    bool operator()(const ListNode* a,const ListNode* b){
+        return a->val>b->val;
+    }
+};
 
+priority_queue<ListNode*,vector<ListNode*>,cmp> pq;
 
 ```
 ## 最大公约数
