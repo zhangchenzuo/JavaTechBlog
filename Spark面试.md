@@ -10,6 +10,9 @@
     - [懒计算](#懒计算)
     - [容错](#容错)
 - [spark的内存模型](#spark的内存模型)
+  - [堆内内存](#堆内内存)
+  - [堆外内存](#堆外内存)
+  - [动态内存分配](#动态内存分配)
 - [Job，Stage，Task](#jobstagetask)
   - [DAG](#dag)
   - [partition](#partition)
@@ -34,6 +37,9 @@
     - [广播变量 只读](#广播变量-只读)
   - [Checkpoint](#checkpoint)
 - [Shuffle](#shuffle)
+  - [shuffle write](#shuffle-write)
+    - [ExternalSorter](#externalsorter)
+  - [shuffle read](#shuffle-read)
   - [shuffle优化](#shuffle优化)
   - [partitioner](#partitioner)
   - [聚合类算子](#聚合类算子)
@@ -176,11 +182,36 @@ RDD的数据本地性来源于file的partition的位置，task的perfer来源于
 # spark的内存模型
 
 
-spark除了把内存作为计算资源以外，还作为了存储资源。MemoryManager负责管理。spark把内存划分为了堆内存和堆外内存。堆内存时JVM堆内存的一部分，堆外内存时工作节点中系统内存的一部分空间。内存可以被分为StorageMemoryPool和ExecutionMemoryPool。
+spark除了把内存作为计算资源以外，还作为了存储资源。MemoryManager负责管理。
 
 
+
+在Spark 1.5及之前版本中，内存管理默认实现是StaticMemoryManager，称为**静态内存管理**。从Spark 1.6.0版本开始，Spark默认采用一种新的内存管理模型UnifiedMemoryManager，称为统一内存管理，其特点是可以动态调整Execution和Storage的内存，因此又称为**动态内存管理**。
+
+
+内存可以被分为主要分为两类：
+- Execution Memory：主要用于计算，如shuffles、joins、sorts及aggregations等操作
+- Storage Memory：主要用于cache数据和在集群内部传输数据。
+
+也可以Spark内存划分为堆内存和堆外内存。堆内存是JVM堆内存的一部分，堆外内存是工作节点中系统内存的一部分空间。
+
+## 堆内内存
+- Execution Memory：主要用于shuffles、joins、sorts及aggregations等计算操作，又称为Shuffle Memory。
+- Storage Memory：主要用于cache数据、unroll数据，有时也被称为Cache Memory。
+- User Memory：用户内存，主要用于存储内部元数据、用户自定义的数据结构等，根据用户实际定义进行使用。
+- Reserved Memory：默认300M的系统预留内存，主要用于程序运行。
+  
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/c98eb9ce8394456c80b13607d651a229.png)
+参数spark.memory.fraction在Spark 2.x版本中默认0.6，即Spark Memory（Execution Memory + Storage Memory）默认占整个usableMemory（systemMemory - Reserved Memory）内存的60%。
 
+参数spark.memory.storageFraction默认0.5，代表Storage Memory占用Spark Memory百分比，默认值0.5表示Spark Memory中Execution Memory和Storage Memory各占一半。
+
+## 堆外内存
+为了进一步优化内存的使用，减小GC开销，Spark 1.6版本还增加了对Off-heap Memory的支持，Off-heap Memory默认是关闭的，开启须设置参数spark.memory.offHeap.enabled为true，并通过参数spark.memory.offHeap.size设置堆外内存大小，单位为字节。
+
+堆外内存划分上没有了用户内存与预留内存，只包含Execution Memory和Storage Memory两块区域。
+## 动态内存分配
+意思是说，当Execution Memory有空闲，Storage Memory不足时，Storage Memory可以借用Execution Memory，反之亦然。Execution Memory可以让Storage Memory写到磁盘，收回被占用的空间。如果Storage Memory被Execution Memory借用，因为实现上的复杂度，却收回不了空间。
 # Job，Stage，Task
 一个Application由一个Driver和若干个Job构成，一个Job由多个Stage构成，一个Stage由多个没有Shuffle关系的Task组成。
 ## DAG
@@ -391,7 +422,7 @@ checkpointRDD是特殊的RDD，用来从存储体系中恢复检查点的数据�
 
 并且重写了父RDD的方法以实现getPartitions，getPreferredLocations, compute方法用于从checkpoint file中得到数据。
 
-checkpoints前最好对RDD cache下。
+checkpoints前最好对RDD cache下。cache 机制是每计算出一个要 cache 的 partition 就直接将其 cache 到内存了。但 checkpoint 没有使用这种第一次计算得到就存储的方法，而是等到 job 结束后另外启动专门的 job 去完成 checkpoint 。也就是说需要 checkpoint 的 RDD 会被计算两次。因此，在使用 rdd.checkpoint() 的时候，建议加上 rdd.cache()，这样第二次运行的 job 就不用再去计算该 rdd 了，直接读取 cache 写磁盘。
 # Shuffle
 某种具有共同特征的数据汇聚到一个计算节点上进行计算
 
@@ -402,6 +433,79 @@ Shuffle操作涉及以下几个主要步骤：
 shuffle写：在Shuffle阶段，Spark将根据键（Key）对数据进行重新分区，将具有相同键的数据发送到同一分区。这个过程涉及数据的传输和网络通信，因为具有相同键的数据可能来自于不同的分区。
 
 shuffle读：在Reduce阶段，Spark将在每个分区上对相同键的数据进行聚合、排序或其他操作，以生成最终结果。
+## shuffle write
+最开始1.1之前使用的是Hash Based Shuffle，这方法会导致大量的碎片文件，对于系统的IO压力很大。因此在1.2以后改成了Sort Based Shuffle。
+
+关于hash的参考这里[HashShuffleManager](#hashshufflemanager)
+
+关于sort参考这里[sortShuffleManager](#sortshufflemanager)。
+
+>BypassMergeSortShuffleWriter
+
+这个方法不在map段持久化之间进行排序，聚合。
+
+简单来说，`BypassMergeSortShuffleWriter`和Hash Shuffle中的HashShuffleWriter实现基本一致， 唯一的区别在于，map端的多个输出文件会被汇总为一个文件。 所有分区的数据会合并为同一个文件，会生成一个索引文件，是为了索引到每个分区的起始地址，可以随机 access 某个partition的所有数据。
+
+
+`BypassMergeSortShuffleWriter`原理：给每个分区分配一个临时文件，对每个 record的key 使用分区器（模式是hash，如果用户自定义就使用自定义的分区器）找到对应分区的输出文件句柄，直接写入文件，没有在内存中使用 buffer。 最后copyStream方法把所有的临时分区文件拷贝到最终的输出文件中，并且记录每个分区的文件起始写入位置，把这些位置数据写入索引文件中。
+
+>SortShuffleWriter
+
+可以在map段聚合也不可以不聚合。最后也会有一个分区数据文件和一个分区索引文件
+
+对于`SortShuffleWriter`，具体的处理步骤就是
+
+- 使用 `PartitionedAppendOnlyMap`(对AppendOnlyMap的继承拓展) 或者 `PartitionedPairBuffer` 在内存中进行排序，  排序的 K 是（partitionId， hash（key）） 这样一个元组。
+- 如果超过内存 limit， 我 spill 到一个文件中，这个文件中元素也是有序的，首先是按照 partitionId的排序，如果 partitionId 相同， 再根据 hash（key）进行比较排序
+- 如果需要输出全局有序的文件的时候，就需要对之前所有的输出文件 和 当前内存中的数据结构中的数据进行  merge sort， 进行全局排序
+
+`SortShuffleWriter` 中使用 `ExternalSorter` 来对内存中的数据进行排序，ExternalSorter内部维护了两个集合`PartitionedAppendOnlyMap`、`PartitionedPairBuffer`， 两者都是使用了 hash table 数据结构。 如果需要进行 aggregation， 就使用 PartitionedAppendOnlyMap（支持 lookup 某个Key，如果之前存储过相同key的K-V 元素，就需要进行 aggregation，然后再存入aggregation后的 K-V）， 否则使用 PartitionedPairBuffer（只进行添K-V 元素）。
+
+纯内存：`AppendOnlyMap`，只是有KV，没有partition信息。
+
+
+>UnsafeShuffleWriter
+
+底层使用`ShuffleExternalSorter`作为外部排序，因此不能聚合(没有map结构进行存储，无法下map端aggregate。更深层次的原因是不会进行反序列化)。使用了Tungsten内存（即可能是JVM内存，也可能是操作系统的内存）作为缓存，提高了写入性能。
+### ExternalSorter
+外部排序器可以对map任务的输出在map或者reduce侧进行排序。并将结果写入磁盘
+
+内存＋磁盘：`ExternalAppendOnlyMap` 结构， 这个就是内存中装不下所有元素，就涉及到外部排序。大概的思路就是进行多个堆的有序合并，实现aggregate。
+![在这里插入图片描述](https://img-blog.csdnimg.cn/c7922c18ce134b4d98ac3dcbc54e01ba.png)
+
+
+> shuffleExternalSorter
+专门对shuffle数据进行排序的外部排序器，将map任务的输出存储到Tungsten；超出limit时溢写到磁盘。与ExternalSorter不同，shuffleExternalSorter没有实现数据持久化，是用调用者UnsafeShuffleWriter实现的。
+
+## shuffle read
+
+shuffle read，通常就是一个stage刚开始时要做的事情。stage的每一个task就需要将上一个stage的计算结果中的所有相同key，从各个节点上 通过网络 拉取到自己所在的节点上，然后进行key的聚合或连接等操作。
+
+由于shuffle write的过程中，task给Reduce端的stage的每个task都创建了一个磁盘文件，因此shuffle read的过程中，每个task只要从上游stage的所有task所在节点上，拉取属于自己的那一个磁盘文件即可。
+
+shuffle read的拉取过程是一边拉取一边进行聚合的。每个shuffle read task都会有一个自己的buffer缓冲，每次都只能拉取与buffer缓冲相同大小的数据，然后通过内存中的一个Map进行聚合等操作。聚合完一批数据后，再拉取下一批数据，并放到buffer缓冲中进行聚合操作。以此类推，直到最后将所有数据到拉取完，并得到最终的结果。
+
+Shuffle Read 操作发生在 ShuffledRDD#compute 方法中，意味着 Shuffle Read可以发生 ShuffleMapTask 和 ResultTask 两种任务中
+
+> 工作流程
+
+- 首先，shuffle类型的RDD的compute会通过ShuffleManager获取BlockStoreShuffleReader
+
+- 通过BlockStoreShuffleReader中的read方法进行数据的读取，
+  
+  - 构建了一个ShuffleBlockFetcherIterator
+  - 通过mapOutputTracker组件获取每个分区对应的数据block的物理位置
+  一个reduce端分区的数据一般会依赖于所有的map端输出的分区数据，所以数据一般会在多个executor(注意是executor节点，通过BlockManagerId唯一标识，一个物理节点可能会运行多个executor节点)节点上，而且每个executor节点也可能会有多个block，在shuffle写过程的分析中我们也提到，每个map最后时输出一个数据文件和索引文件，也就是一个block，但是因为一个节点
+
+- 这个方法通过ShuffleBlockFetcherIterator对象封装了远程拉取数据的复杂逻辑，并且最终将拉取到的数据封装成流的迭代器的形式。
+
+- 对所有的block的流进行层层装饰，包括反序列化，任务度量值（读入数据条数）统计。
+- 对数据进行聚合
+- 对聚合后的数据进行排序
+
+分为本地读取和远端读取：本地读取比较简单，主要就是通过本节点的`BlockManager`来获取块数据，并通过索引文件获取数据指定分区的数据。
+
+远端读取时通过网络读取其他executor上的数据，因为网络读取，所以每次最多到5个节点上读取并且请求大小不超过48M的5分之一。每次都构建一个fetchRequest，去请求拉取数据。
 
 ## shuffle优化
 
@@ -496,7 +600,9 @@ Spark作业看起来会运行得非常缓慢，甚至可能因为某个task处�
 ## shuffle调优
 大多数Spark作业的性能主要就是消耗在了shuffle环节，因为该环节包含了大量的磁盘IO、序列化、网络数据传输等操作。
 
-有两种shuffle，1.2以后默认的是HashShuffleManager，HashShuffleManager有着一个非常严重的弊端，就是会产生大量的中间磁盘文件，进而由大量的磁盘IO操作影响了性能。后面变成了SortShuffleManager，这个对于shuffle有所改进，对于临时文件会最后合并为一个文件，因此每个task就只会有一个磁盘文件。
+有两种shuffle，1.2以前默认的是HashShuffleManager，HashShuffleManager有着一个非常严重的弊端，就是会产生大量的中间磁盘文件，进而由大量的磁盘IO操作影响了性能。
+
+后面变成了SortShuffleManager，这个对于shuffle有所改进，对于临时文件会最后合并为一个文件，因此每个task就只会有一个磁盘文件。
 
 ### HashShuffleManager
 #### shuffleWrite/shuffleRead
@@ -508,7 +614,9 @@ shuffle read，通常就是一个stage刚开始时要做的事情。此时该sta
 
 shuffle read的拉取过程是一边拉取一边进行聚合的。每个shuffle read task都会有一个自己的buffer缓冲，**每次都只能拉取与buffer缓冲相同大小的数据**，然后通过内存中的一个Map进行聚合等操作。聚合完一批数据后，再拉取下一批数据，并放到buffer缓冲中进行聚合操作。以此类推，直到最后将所有数据到拉取完，并得到最终的结果。
 
-HashShuffleManager可以进行优化，实现复用磁盘文件。假设第一个stage有50个task，第二个stage有100个task，总共还是有10个Executor，每个Executor执行5个task。那么原本使用未经优化的HashShuffleManager时，每个Executor会产生500个磁盘文件，所有Executor会产生5000个磁盘文件的。但是此时经过优化之后，每个Executor创建的磁盘文件的数量的计算公式为：CPU core的数量（1） * 下一个stage的task数量。也就是说，每个Executor此时只会创建100个磁盘文件（下一个stage的task数量），所有Executor只会创建1000个磁盘文件。
+**HashShuffleManager可以进行优化，实现复用磁盘文件**。假设第一个stage有50个task，第二个stage有100个task，总共还是有10个Executor，每个Executor执行5个task。那么原本使用未经优化的HashShuffleManager时，每个Executor会产生500个磁盘文件，所有Executor会产生5000个磁盘文件的。但是此时经过优化之后，每个Executor创建的磁盘文件的数量的计算公式为：CPU core的数量（1） * 下一个stage的task数量。也就是说，每个Executor此时只会创建100个磁盘文件（下一个stage的task数量），所有Executor只会创建1000个磁盘文件。
+
+![在这里插入图片描述](https://img-blog.csdnimg.cn/99624383f2f748d49a404f1133e5ce57.png)
 
 ## sortShuffleManager
 SortShuffleManager的运行机制主要分成两种，一种是普通运行机制，另一种是bypass运行机制。当shuffle read task的数量小于等于spark.shuffle.sort.bypassMergeThreshold参数的值时（默认为200），就会启用bypass机制。
@@ -523,6 +631,8 @@ SortShuffleManager的运行机制主要分成两种，一种是普通运行机�
 
 SortShuffleManager由于有一个磁盘文件merge的过程，因此大大减少了文件数量。比如第一个stage有50个task，总共有10个Executor，每个Executor执行5个task，而第二个stage有100个task。由于每个task最终只有一个磁盘文件，因此此时每个Executor上只有5个磁盘文件(因为当前只有5个task执行)，所有Executor只有50个磁盘文件。
 
+![在这里插入图片描述](https://img-blog.csdnimg.cn/573e37543a0b4a989828fbf0da45ff85.png)
+
 > bypass 
 
 bypass运行机制的触发条件如下： 
@@ -535,6 +645,7 @@ bypass运行机制的触发条件如下：
 
 而该机制与普通SortShuffleManager运行机制的不同在于：第一，磁盘写机制不同；第二，不会进行排序。也就是说，启用该机制的最大好处在于，shuffle write过程中，不需要进行数据的排序操作，也就节省掉了这部分的性能开销。
 
+![在这里插入图片描述](https://img-blog.csdnimg.cn/6c2eb2569bbe4a778deea94f63c65dbb.png)
 
 相关参数：https://tech.meituan.com/2016/05/12/spark-tuning-pro.html
 # 其他问题
