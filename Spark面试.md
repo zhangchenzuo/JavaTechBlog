@@ -20,6 +20,7 @@
   - [Task](#task)
 - [spark的数据结构](#spark的数据结构)
   - [RDD](#rdd)
+    - [RDD的迭代计算](#rdd的迭代计算)
     - [容错机制](#容错机制)
     - [RDD持久化](#rdd持久化)
       - [persist/cache](#persistcache)
@@ -31,6 +32,7 @@
   - [分布共享变量](#分布共享变量)
     - [累加器 只写](#累加器-只写)
     - [广播变量 只读](#广播变量-只读)
+  - [Checkpoint](#checkpoint)
 - [Shuffle](#shuffle)
   - [shuffle优化](#shuffle优化)
   - [partitioner](#partitioner)
@@ -263,14 +265,29 @@ Task可以分为需要shuffle的**shuffleMapTask**和**resultTask**。
 
 存放了三样最重要的数据：我的上游是什么，我是怎么计算的，我希望下游在哪里。
 
-包括的方法：
-- partitions: Option[Partitioner]
+RDD的五个主要属性：
+- partitions的列表。每个RDD是由多个分区组成的。
+- 每个分区都有计算函数。compute函数
+- 对其他RDD的依赖关系
+- （可选）对kv RDD的partitioner，比如 Hash Partitioner 和 Range Partitioner。上游RDD通过partitioner知道输出给哪个下游RDD。
+- （可选）计算每个分区的preferred location
+
+包括的接口：
 - getDependencies()
 - getPartitions():Array[Partition]
 - getPerferrededLocations(split: Partition): Seq[String]
+- compute(split: Partition, context: TaskContext): Iterator[T]
+
+模板方法：
+- partitions: Array[Partitions]
+- preferredLocations
 - Map(): MapPartitionsRDD
 - count(): Long
-- compute(split: Partition, context: TaskContext): Iterator[T]
+
+
+当调用RDD的partitons方法时，会先调用checkpoint的partitions，进而调用checkpoint的getPartitions方法，然后再调用RDD的getPartitions方法。
+同理preferredLocations和compute。
+
 
 >弹性
 
@@ -278,12 +295,21 @@ Task可以分为需要shuffle的**shuffleMapTask**和**resultTask**。
 2. 容错的弹性：数据丢失可以自动恢复
 3. 计算的弹性：计算出错重试机制
 4. 分片的弹性：根据需要重新分片 
+
+### RDD的迭代计算
+RDD的计算使用的时iterator方法作为入口，实际上在执行shuffleMapTask和ResultTask的runTask方法都会去调用RDD的iterator方法。
+
+这个方法逻辑是：
+1. 如果RDD的storageLevel不是None，尝试在磁盘，堆内内存，堆外内存去读取计算结果，调用getOrCompute方法。
+2. 如果storageLevel是None，分区任务可能是首次执行，存储中还没有计算结果。所有调用computeOrReadCheckpoint方法计算或者从检查点恢复数据。
+
+体现了容错思路，某个分区的task失败会导致stage的重新调度，此时成功的分区可以直接从checkpoint读取缓存的结果，错误的分区再次尝试计算。
 ### 容错机制
 RDD的容错，主要是从保存了依赖关系上体现的。
 
 　Spark框架层面的容错机制，主要分为三大层面（调度层、RDD血统层、Checkpoint层），在这三大层面中包括Spark RDD容错四大核心要点。
 
-1. Stage输出失败，上层调度器DAGScheduler重试。
+1. Stage输出失败，上层调度器DAGScheduler重试，重新调度stage。
 2. Spark计算中，Task内部任务失败，底层调度器重试。
 3. RDD Lineage血统中窄依赖、宽依赖计算。
 4. Checkpoint缓存。 checkpoint通过将RDD写入Disk作检查点，是Spark lineage容错的辅助，lineage过长会造成容错成本过高，这时在中间阶段做检查点容错，如果之后有节点出现问题而丢失分区，从做检查点的RDD开始重做Lineage，就会减少开销。
@@ -353,7 +379,19 @@ Dataset是DataFrame的扩展，它提供了类型安全，面向对象的编程�
 
 spark会自动将闭包中的变量都复制并发送到工作节点上，这样会低效。其实多个工作节点可以共用同一个表变量。
 
+## Checkpoint
+checkpoint的本质是将系统运行期键的内存数据结构和状态持久化到硬盘上。需要时可以读取这些数据，构建出来运行时的状态。
 
+checkpointRDD是特殊的RDD，用来从存储体系中恢复检查点的数据。
+
+核心的方法包括：
+- writePartitionToCheckpointFile：将RDD分区的数据写入文件。
+- writePartitionerToCheckpointDir: 将分区计算器的数据写入文件。
+- ReadCheckpointFile: 读文件，返回一个一个迭代器
+
+并且重写了父RDD的方法以实现getPartitions，getPreferredLocations, compute方法用于从checkpoint file中得到数据。
+
+checkpoints前最好对RDD cache下。
 # Shuffle
 某种具有共同特征的数据汇聚到一个计算节点上进行计算
 
