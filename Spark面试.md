@@ -9,14 +9,13 @@
     - [数据本地性](#数据本地性)
     - [懒计算](#懒计算)
     - [容错](#容错)
+- [调度系统](#调度系统)
 - [spark的内存模型](#spark的内存模型)
   - [堆内内存](#堆内内存)
   - [堆外内存](#堆外内存)
   - [动态内存分配](#动态内存分配)
 - [Job，Stage，Task](#jobstagetask)
-  - [DAG](#dag)
-  - [partition](#partition)
-  - [Job](#job)
+  - [DAG/partition/Job](#dagpartitionjob)
   - [stage](#stage)
     - [依赖划分原则](#依赖划分原则)
     - [宽窄依赖](#宽窄依赖)
@@ -28,7 +27,6 @@
     - [RDD持久化](#rdd持久化)
       - [persist/cache](#persistcache)
       - [如何选择一种最合适的持久化策略](#如何选择一种最合适的持久化策略)
-      - [两种操作](#两种操作)
   - [DataFrame](#dataframe)
   - [DataSet](#dataset)
   - [三种数据结构的对比](#三种数据结构的对比)
@@ -36,6 +34,7 @@
     - [累加器 只写](#累加器-只写)
     - [广播变量 只读](#广播变量-只读)
   - [Checkpoint](#checkpoint)
+    - [checkpoint和persist的区别](#checkpoint和persist的区别)
 - [Shuffle](#shuffle)
   - [shuffle write](#shuffle-write)
     - [ExternalSorter](#externalsorter)
@@ -43,6 +42,13 @@
   - [shuffle优化](#shuffle优化)
   - [partitioner](#partitioner)
   - [聚合类算子](#聚合类算子)
+- [Spark的Join实现](#spark的join实现)
+  - [如何选择join机制](#如何选择join机制)
+  - [shuffle hash join/ sort merge Join](#shuffle-hash-join-sort-merge-join)
+- [Spark算子类型](#spark算子类型)
+  - [transform 算子](#transform-算子)
+  - [action算子](#action算子)
+  - [算子例子](#算子例子)
 - [与MR对比](#与mr对比)
   - [优点](#优点)
 - [Spark调优](#spark调优)
@@ -55,6 +61,7 @@
     - [HashShuffleManager](#hashshufflemanager)
       - [shuffleWrite/shuffleRead](#shufflewriteshuffleread)
   - [sortShuffleManager](#sortshufflemanager)
+- [spark 3.0](#spark-30)
 - [其他问题](#其他问题)
   - [Spark程序执行，有时候默认为什么会产生很多task，怎么修改默认task执行个数？](#spark程序执行有时候默认为什么会产生很多task怎么修改默认task执行个数)
   - [为什么shuffle性能差/shuffle发生了什么](#为什么shuffle性能差shuffle发生了什么)
@@ -133,25 +140,25 @@ Spark执行环境。
 - MemoryManager
 - ShuffleManager
 ## 几种不同的部署方法
-本地模式
+>本地模式
 
-    Spark不一定非要跑在hadoop集群，可以在本地，起多个线程的方式来指定。方便调试，本地模式分三类
-        local：只启动一个executor
-        local[k]: 启动k个executor
-        local：启动跟cpu数目相同的 executor
+Spark不一定非要跑在hadoop集群，可以在本地，起多个线程的方式来指定。方便调试，本地模式分三类
+  - local：只启动一个executor
+  - local[k]: 启动k个executor
+  - local：启动跟cpu数目相同的 executor
 
-standalone模式
+>standalone模式
 
-    分布式部署集群，自带完整的服务，资源管理和任务监控是Spark自己监控，这个模式也是其他模式的基础
+分布式部署集群，自带完整的服务，资源管理和任务监控是Spark自己监控，这个模式也是其他模式的基础
 
-Spark on yarn模式
+>Spark on yarn模式
 
-    分布式部署集群，资源和任务监控交给yarn管理
-    粗粒度资源分配方式，包含cluster和client运行模式
-        cluster 适合生产，driver运行在集群子节点，具有容错功能
-        client 适合调试，dirver运行在客户端
+分布式部署集群，资源和任务监控交给yarn管理
+粗粒度资源分配方式，包含cluster和client运行模式
+  - cluster 适合生产，driver运行在集群子节点，具有容错功能
+  - client 适合调试，dirver运行在客户端
 
-Spark On Mesos模式
+>Spark On Mesos模式
 
 ## 集群运行（描述spark里一个任务的执行过程）
 （分区的数量取决于partition数量的设定，每个分区的数据只会在一个task中计算。）
@@ -179,6 +186,11 @@ RDD的数据本地性来源于file的partition的位置，task的perfer来源于
 1. task如果失败了可以重试
 2. 对于node和executor有黑名单机制，黑名单会有超时机制
 
+# 调度系统
+1. 用户提交的job会被转换成一系列的RDD并通过RDD的依赖关系构建DAG，然后将RDD组成的DAG提交给调度系统
+2. DAGScheduler负责接收RDD组成的DAG，将一系列RDD划分成不同的stage。根据stage不同的类型，给每个stage中未完成的partition创建不同的类型的task。每个stage有多少未完成的partition，就有多少task。每个stage的task会以taskset的形式，提交给taskscheduler。
+3. TaskScheduler负责对taskset进行管理，并将TaskSetManager添加到调度池，然后将task的调度交给调度后端接口（SchedulerBackend）。SchedulerBackend申请taskScheduler，按照task调度算法对调度池中的所有TaskSetManager进行排序，然后对TaskSet按照最大本地性原则分配资源，并且在各个节点执行task
+4. execute task：执行任务。
 # spark的内存模型
 
 
@@ -214,17 +226,19 @@ spark除了把内存作为计算资源以外，还作为了存储资源。Memory
 意思是说，当Execution Memory有空闲，Storage Memory不足时，Storage Memory可以借用Execution Memory，反之亦然。Execution Memory可以让Storage Memory写到磁盘，收回被占用的空间。如果Storage Memory被Execution Memory借用，因为实现上的复杂度，却收回不了空间。
 # Job，Stage，Task
 一个Application由一个Driver和若干个Job构成，一个Job由多个Stage构成，一个Stage由多个没有Shuffle关系的Task组成。
-## DAG
+## DAG/partition/Job
 用来反映RDD之间的依赖关系。
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/12d9ed994680447eb0d020aaac7e4a76.png)
-## partition
+
+>partition
 
 数据分区，一个RDD的数据可以被划分为多少个分区。Spark根据partition的数量来确定Task的数量。
 
 分区太少，会导致较少的并发、数据倾斜、或不正确的资源利用。分区太多，导致任务调度花费比实际执行时间更多的时间。若没有配置分区数，默认的分区数是：所有执行程序节点上的内核总数。
 
 一般一个core上由2-4个分区。
-## Job
+>Job
+
 用户提交的作业。当RDD及其DAG被提交给DAGScheduler以后，DAGScheduler会将RDD的transform和action都视为一个job。
 
 **一个Job包含多个RDD及作用于相应RDD上的各种操作，它包含很多task的并行计算**。它通常由一个或多个RDD转换操作和行动操作组成，这些操作会被划分为一些Stage。
@@ -372,10 +386,7 @@ cache不是action操作
 通常不建议使用DISK_ONLY和后缀为_2的级别：因为完全基于磁盘文件进行数据的读写，会导致性能急剧降低，有时还不如重新计算一次所有RDD。后缀为_2的级别，必须将所有数据都复制一份副本，并发送到其他节点上，数据复制以及网络传输会导致较大的性能开销，除非是要求作业的高可用性，否则不建议使用。
 
 
-#### 两种操作
-- action：对RDD真正执行计算。collect、reduce、foreach、count
-- Transformation：对RDD进行转换
-- Controller：对性能效率和容错方面的支持。persist , cache, checkpoint
+
 ## DataFrame
 Dataframe也是一种不可修改的分布式数据集合，它可以按列查询数据，可以当成数据库里面的表看待。可以对**数据指定数据模式**（schema）。也就是说DataFrame是Dataset[row]的一种形式
 ## DataSet
@@ -423,6 +434,13 @@ checkpointRDD是特殊的RDD，用来从存储体系中恢复检查点的数据�
 并且重写了父RDD的方法以实现getPartitions，getPreferredLocations, compute方法用于从checkpoint file中得到数据。
 
 checkpoints前最好对RDD cache下。cache 机制是每计算出一个要 cache 的 partition 就直接将其 cache 到内存了。但 checkpoint 没有使用这种第一次计算得到就存储的方法，而是等到 job 结束后另外启动专门的 job 去完成 checkpoint 。也就是说需要 checkpoint 的 RDD 会被计算两次。因此，在使用 rdd.checkpoint() 的时候，建议加上 rdd.cache()，这样第二次运行的 job 就不用再去计算该 rdd 了，直接读取 cache 写磁盘。
+
+### checkpoint和persist的区别
+`persist`虽然可以将 RDD 的 partition 持久化到磁盘，但该 partition 由 blockManager 管理。一旦 driver program 执行结束，也就是 executor 所在进程 CoarseGrainedExecutorBackend stop，blockManager 也会 stop，被 cache 到磁盘上的 RDD 也会被清空（整个 blockManager 使用的 local 文件夹被删除）。
+
+而 checkpoint 将 RDD 持久化到 HDFS 或本地文件夹，如果不被手动 remove 掉，是一直存在的，也就是说可以被下一个 driver program 使用，而 cached RDD 不能被其他 dirver program 使用。
+
+
 # Shuffle
 某种具有共同特征的数据汇聚到一个计算节点上进行计算
 
@@ -531,6 +549,70 @@ Partitioner是用于对RDD进行分区的对象，它定义了数据在分布式
 ## 聚合类算子
 
 尽量避免使用shuffle类算子。也就是将分布在集群中多个节点上的同一个key，拉取到同一个节点上，进行聚合或join等操作。比如reduceByKey、join、distinct、repartition等算子。尽量使用map类的非shuffle算子。
+# Spark的Join实现
+Spark提供了五种执行Join操作的机制，分别是：
+
+- Shuffle Hash Join：是一张大表join一张小表，则可以选择shuffle hash join算法. `spark.sql.join.prefersortmergeJoin`设置为false
+- Broadcast Hash Join: 适用于等值小表Join
+- Sort Merge Join：两张大表进行JOIN时，使用该方式。key可以排序，`spark.sql.join.prefersortmergeJoin`默认为true
+- Cartesian Join： cross join
+- Broadcast Nested Join：默认方法
+
+当都可以时：
+Broadcast Hash Join > Sort Merge Join > Shuffle Hash Join > Cartesian Join。
+
+Spark支持三种Join实现方式：shuffle hash join、broad hash join、sort merge join。
+
+
+## 如何选择join机制
+参数配置，hint参数(手动指定方法),输入数据集大小,Join类型,Join条件
+`df1.hint("broadcast").join(df2, ...)`
+
+## shuffle hash join/ sort merge Join
+>Shuffle Hash Join的基本步骤主要有以下两点：
+
+首先，对于两张参与JOIN的表，分别按照join key进行重分区，该过程会涉及Shuffle，其目的是将相同join key的数据发送到同一个分区，方便分区内进行join。
+
+其次，对于每个Shuffle之后的分区，会将小表的分区数据构建成一个Hash table，然后根据join key与大表的分区数据记录进行匹配。
+
+>Sort Merge Join主要包括三个阶段：
+
+- Shuffle Phase : 两张大表根据Join key进行Shuffle重分区
+- Sort Phase: 每个分区内的数据进行排序
+- Merge Phase: 对来自不同表的排序好的分区数据进行JOIN，通过遍历元素，连接具有相同Join key值的行来合并数据集
+
+可以看出，无论分区有多大，Sort Merge Join都不用把某一侧的数据全部加载到内存中，而是即用即取即丢，从而大大提升了大数据量下sql join的稳定性。
+# Spark算子类型
+从大方向来说，Spark 算子大致可以分为以下两类:transform 算子，action算子。
+
+从小方向来说，Spark 算子大致可以分为以下三类:
+- Value数据类型的Transformation算，针对处理的数据项是Value型的数据。
+- Key-Value数据类型的Transfromation算子，针对处理的数据项是Key-Value型的数据对。
+- Action算子，这类算子会触发SparkContext提交Job作业。
+  
+## transform 算子
+这种变换并不触发提交作业，完成作业中间过程处理。Transformation 操作是延迟计算的，也就是说从一个RDD 转换生成另一个 RDD 的转换操作不是马上执行，需要等到有 Action 操作的时候才会真正触发运算
+## action算子
+这类算子会触发 SparkContext 提交 Job 作业
+
+## 算子例子
+- Value数据类型的Transformation算子
+  - 输入分区与输出分区一对一型：**map算子，flatMap算子，mapPartitions算子**，glom算子
+  - 输入分区与输出分区多对一型：union算子，cartesian算子
+  - 输入分区与输出分区多对多型：**groupBy算子**
+  - 输出分区为输入分区子集型：filter算子，**distinct算子**，subtract算子，sample算子，takeSample算子
+  - Cache型：**cache算子，persist算子**
+
+- Key-Value数据类型的Transfromation算子
+  - 输入分区与输出分区一对一：mapValues算子
+  - 对单个RDD聚集：combineByKey算子，reduceByKey算子，partitionBy算子
+  - 两个RDD聚集：Cogroup算子
+- 连接：join算子，leftOutJoin和 rightOutJoin算子
+
+- Action算子
+  - 无输出：foreach算子
+  - HDFS：saveAsTextFile算子，saveAsObjectFile算子
+  - Scala集合和数据类型：collect算子，collectAsMap算子，reduceByKeyLocally算子，lookup算子，count算子,top算子，reduce算子，fold算子，aggregate算子
 # 与MR对比
 ## 优点
 Spark速度更快，因为可以使用多线程并且可以使用内存加速计算。
@@ -648,6 +730,18 @@ bypass运行机制的触发条件如下：
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/6c2eb2569bbe4a778deea94f63c65dbb.png)
 
 相关参数：https://tech.meituan.com/2016/05/12/spark-tuning-pro.html
+
+# spark 3.0
+从 Spark 3.0 官方的Release Notes可以看到，这次大版本的升级主要是集中在性能优化和文档丰富上，其中 46%的优化都集中在 Spark SQL 上。
+
+
+- 自适应查询执行Adaptive Query Execution (AQE)
+AQE 对于整体的 Spark SQL 的执行过程做了相应的调整和优化(如下图)，它最大的亮点是可以根据已经完成的计划结点真实且精确的执行统计结果来不停的反馈并重新优化剩下的执行计划。
+
+  - 自动调整 reducer 的数量，减小 partition 数量：AQE 能够很好的解决这个问题，在 reducer 去读取数据时，会根据用户设定的分区数据的大小(spark.sql.adaptive.advisoryPartitionSizeInBytes)来自动调整和合并(Coalesce)小的 partition，自适应地减小 partition 的数量，以减少资源浪费和 overhead，提升任务的性能。参考示例图中可以看到从最开始的 shuffle 产生 50 个 partitions，最终合并为只有 5 个 partitions。
+  - 自动解决 Join 时的数据倾斜问题：AQE 由于可以实时拿到运行时的数据，通过 Skew Shuffle Reader 自动调整不同 key 的数据大小(spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes) 来避免数据倾斜，从而提高性能。参考示例图可以看到 AQE 自动将 A 表里倾斜的 partition 进一步划分为 3 个小的 partitions 跟 B 表对应的 partition 进行 join，消除短板倾斜任务
+  - 优化 Join 策略：AQE 可以在 Join 的初始阶段获悉数据的输入特性，并基于此选择适合的 Join 算法从而最大化地优化性能。比如从 Cost 比较高的 SortMerge 在不超过阈值的情况下调整为代价较小的 Broadcast Join。
+- 动态分区修剪Dynamic Partition Pruning(DPP)：DPP 主要解决的是对于星型模型的查询场景中过滤条件无法下推的情况。通过 DPP 可以将小表过滤后的数据作为新的过滤条件下推到另一个大表里，从而可以做到对大表 scan 运行阶段的提前过滤掉不必要 partition 读取。这样也可以避免引入不必要的额外 ETL 过程（例如预先 ETL 生成新的过滤后的大表），在查询的过程中极大的提升查询性能
 # 其他问题
 ## Spark程序执行，有时候默认为什么会产生很多task，怎么修改默认task执行个数？
 

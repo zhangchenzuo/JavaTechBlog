@@ -29,6 +29,7 @@
     - [快速幂](#快速幂)
     - [组合数](#组合数)
     - [约瑟夫问题](#约瑟夫问题)
+    - [质数计算](#质数计算)
   - [贪心](#贪心)
   - [拓扑排序（图论）](#拓扑排序图论)
   - [滑动窗口](#滑动窗口)
@@ -166,6 +167,10 @@ public:
 
 
 差分的主要思路是**利用差分统计区间的覆盖频次问题**。维护了一个差分数组，对于每次的覆盖区间，**区间头位置+1，区间结尾+1的位置-1**。最后在进行累加，这样数组每个位置就对应了相应位置的频次。
+
+子数组同时加上/减去一个数，非常适合用差分数组来维护。
+
+差分数组d：对于nums[i]到nums[i+k-1]这个k长区间的变化，d[i]+1, d[i+k]-1;  实际值：sum_d对差分数组进行累加即可。                                                                                                                                                                                                                                                                                                                                                                 
 
 [1893. 检查是否区域内所有整数都被覆盖](https://leetcode-cn.com/problems/check-if-all-the-integers-in-a-range-are-covered/)
 ```cpp
@@ -1040,6 +1045,66 @@ public class Main{
     }
 ```
 
+### 质数计算
+线性筛法：O($\sqrt{n}$)
+```c++
+// 判断一个数字是不是质数
+    bool isPrime(int x) {
+        for (int i = 2; i * i <= x; ++i) {
+            if (x % i == 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+```
+
+埃氏筛：O($n\log\log n$)
+```c++
+// 得到1，n的全部质数
+class Solution {
+public:
+    void countPrimes(int n) {
+        vector<int> isPrime(n, 1);
+        for (int i = 2; i < n; ++i) {
+            if (isPrime[i]) {
+                if ((long long)i * i < n) {
+                    for (int j = i * i; j < n; j += i) {
+                        isPrime[j] = 0;
+                    }
+                }
+            }
+        }
+    }
+};
+```
+
+线性筛：O(n)
+```c++
+// 这保证了每个合数只会被其「最小的质因数」筛去，即每个合数被标记一次。
+class Solution {
+public:
+    int countPrimes(int n) {
+        vector<int> primes;
+        vector<int> isPrime(n, 1);
+        for (int i = 2; i < n; ++i) {
+            if (isPrime[i]) {
+                primes.push_back(i);
+            }
+            for (int j = 0; j < primes.size() && i * primes[j] < n; ++j) {
+                isPrime[i * primes[j]] = 0;
+                if (i % primes[j] == 0) {
+                    break;
+                }
+            }
+        }
+        return primes.size();
+    }
+};
+
+```
+
+互质判断：`gcd(x,y) == 1`
 ## 贪心
 世上贪心绝无相同，非常靠经验。
 
