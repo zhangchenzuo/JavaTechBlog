@@ -14,6 +14,7 @@
   - [堆内内存](#堆内内存)
   - [堆外内存](#堆外内存)
   - [动态内存分配](#动态内存分配)
+  - [可能的OOM](#可能的oom)
 - [Job，Stage，Task](#jobstagetask)
   - [DAG/partition/Job](#dagpartitionjob)
   - [stage](#stage)
@@ -62,12 +63,18 @@
       - [shuffleWrite/shuffleRead](#shufflewriteshuffleread)
   - [sortShuffleManager](#sortshufflemanager)
 - [spark 3.0](#spark-30)
+- [Spark sql](#spark-sql)
+  - [执行流程](#执行流程)
 - [其他问题](#其他问题)
+  - [spark的小文件问题](#spark的小文件问题)
+    - [coalease和repartition的区别](#coalease和repartition的区别)
   - [Spark程序执行，有时候默认为什么会产生很多task，怎么修改默认task执行个数？](#spark程序执行有时候默认为什么会产生很多task怎么修改默认task执行个数)
   - [为什么shuffle性能差/shuffle发生了什么](#为什么shuffle性能差shuffle发生了什么)
+  - [reduceByKey和groupByKey的区别](#reducebykey和groupbykey的区别)
   - [spark的序列化问题](#spark的序列化问题)
   - [描述一下spark的运行过程和原理](#描述一下spark的运行过程和原理)
   - [Executor的内存/core使用是什么样的](#executor的内存core使用是什么样的)
+  - [使用spark实现topN](#使用spark实现topn)
 
 # spark 框架和运行原理
 
@@ -191,12 +198,13 @@ RDD的数据本地性来源于file的partition的位置，task的perfer来源于
 2. DAGScheduler负责接收RDD组成的DAG，将一系列RDD划分成不同的stage。根据stage不同的类型，给每个stage中未完成的partition创建不同的类型的task。每个stage有多少未完成的partition，就有多少task。每个stage的task会以taskset的形式，提交给taskscheduler。
 3. TaskScheduler负责对taskset进行管理，并将TaskSetManager添加到调度池，然后将task的调度交给调度后端接口（SchedulerBackend）。SchedulerBackend申请taskScheduler，按照task调度算法对调度池中的所有TaskSetManager进行排序，然后对TaskSet按照最大本地性原则分配资源，并且在各个节点执行task
 4. execute task：执行任务。
-# spark的内存模型
 
+- DAGScheduler: 提交Job，切分stage，发送给TaskScheduler
+- TaskScheduler: 调度task，把task发送给executor执行。
+# spark的内存模型
+物理上分类可以分为堆内内存和堆外内存。逻辑上可以分为计算内存和存储内存。
 
 spark除了把内存作为计算资源以外，还作为了存储资源。MemoryManager负责管理。
-
-
 
 在Spark 1.5及之前版本中，内存管理默认实现是StaticMemoryManager，称为**静态内存管理**。从Spark 1.6.0版本开始，Spark默认采用一种新的内存管理模型UnifiedMemoryManager，称为统一内存管理，其特点是可以动态调整Execution和Storage的内存，因此又称为**动态内存管理**。
 
@@ -224,10 +232,23 @@ spark除了把内存作为计算资源以外，还作为了存储资源。Memory
 堆外内存划分上没有了用户内存与预留内存，只包含Execution Memory和Storage Memory两块区域。
 ## 动态内存分配
 意思是说，当Execution Memory有空闲，Storage Memory不足时，Storage Memory可以借用Execution Memory，反之亦然。Execution Memory可以让Storage Memory写到磁盘，收回被占用的空间。如果Storage Memory被Execution Memory借用，因为实现上的复杂度，却收回不了空间。
+
+
+## 可能的OOM
+- map执行内存溢出：单个map 中产生了大量的对象导致的。
+解决方法：1. 增加堆内内存。2. 减少每个 Task 处理数据量，使每个 Task产生大量的对象时，Executor 的内存也能够装得下。具体做法可以在会产生大量对象的 map 操作之前调用 repartition 方法，分区成更小的块传入 map。
+- shuffle后内存溢出：可能因为数据倾斜。或者读写开销太大了，可以预先map或者filter一下。
+- driver 内存溢出：用户在 Dirver 端口生成大对象，比如创建了一个大的集合数据结构。解决方法：增加driver内存，检查是不是代码逻辑错误，在driver端做了操作。
+
+
+
 # Job，Stage，Task
 一个Application由一个Driver和若干个Job构成，一个Job由多个Stage构成，一个Stage由多个没有Shuffle关系的Task组成。
 ## DAG/partition/Job
-用来反映RDD之间的依赖关系。
+
+> DAG图：
+用来反映RDD之间的依赖关系。在创建RDD的时候会自然有这个抽象的概念。串联起来了所有的stage。
+
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/12d9ed994680447eb0d020aaac7e4a76.png)
 
 >partition
@@ -442,9 +463,9 @@ checkpoints前最好对RDD cache下。cache 机制是每计算出一个要 cache
 
 
 # Shuffle
-某种具有共同特征的数据汇聚到一个计算节点上进行计算
+某种具有共同特征的数据汇聚到一个计算节点上进行计算。一定会发生数据落盘。
 
-Spark中，Shuffle是指将数据重新分区（partition）和重新组合的过程。
+Spark中，Shuffle是指将数据重新分区（partition）和重新组合的过程。比如遇到repartition，join，各种ByKey（reduceByKey）。
 
 Shuffle操作涉及以下几个主要步骤：
 
@@ -552,21 +573,43 @@ Partitioner是用于对RDD进行分区的对象，它定义了数据在分布式
 # Spark的Join实现
 Spark提供了五种执行Join操作的机制，分别是：
 
-- Shuffle Hash Join：是一张大表join一张小表，则可以选择shuffle hash join算法. `spark.sql.join.prefersortmergeJoin`设置为false
-- Broadcast Hash Join: 适用于等值小表Join
-- Sort Merge Join：两张大表进行JOIN时，使用该方式。key可以排序，`spark.sql.join.prefersortmergeJoin`默认为true
+
+- Broadcast Hash Join: 适用于（等值）小表Join。将小表先发送给 driver，然后由 driver 统一广播给大表分区所在的所有 executor 节点。每个excecutor进行hash join。由小表对应的 buildIter 构建 hash table，大表对应的 streamIter 来探测。
+  - 条件是小表必须小于参数 spark.sql.autoBroadcastJoinThreshold，该值默认为 10M，或者指定了 broadcast hint。
+
+- Shuffle Hash Join：大表join稍微小的表无排序。将两张表按 join key 重新分区shuffle（两表相同的 key 的数据会落在同一节点上），数据会重新分布到集群中的所有节点上。每个executor执行hash join，再将各个分区的数据进行合并。
+  - 条件：`spark.sql.join.prefersortmergeJoin`设置为false。左表未排序。
+- Sort Merge Join：两张大表进行JOIN时，使用该方式。
+  - 原理：1. shuffle：将两张大表根据 join key 重新分区，这样两张表的数据将会分布到整个集群，以便更大程度的并行进行下一步操作。2. sort：对每个分区节点内的两表数据，分别排序。3. merge：对两表进行 join 操作。各分区各自遍历自己的 streamIter，对于每条记录，使用顺序查找的方式从 buildIter 查找对应的记录，由于两个表都是排序的，每次处理完 streamIter 的一条记录后，对于 streamIter 的下一条记录，从 buildIterm 上一次查找结束的位置开始查找即可，而不需要重新再开始查找。
 - Cartesian Join： cross join
-- Broadcast Nested Join：默认方法
+- Broadcast Nested Join：默认兜底方法
 
 当都可以时：
 Broadcast Hash Join > Sort Merge Join > Shuffle Hash Join > Cartesian Join。
 
-Spark支持三种Join实现方式：shuffle hash join、broad hash join、sort merge join。
+简单来说就是：
+- 大表和大表：shuffle join。每个节点都要和其他节点通讯，并根据哪个节点有你当前用于join的key来传输数据。因此网络负担比较重。
+- 大表与小表：broadcast join。可以把数据量小的df复制到集群的所有工作节点。然后每个工作节点单独执行，不需要额外的通信。
 
+
+Spark支持三种Join实现方式：shuffle hash join、broad hash join、sort merge join。
 
 ## 如何选择join机制
 参数配置，hint参数(手动指定方法),输入数据集大小,Join类型,Join条件
 `df1.hint("broadcast").join(df2, ...)`
+
+>原理
+通过 join key 和逻辑计划的大小来选择合适的 join 方法。 
+- 等值join：
+
+  - Broadcast：如果某一边表小于 spark.sql.autoBroadcastJoinThreshold 或显示指定 broadcast hint（如用户使用 DataFrame 的 org.apache.spark.sql.functions.broadcast() 方法）。
+  - 否则使用Shuffle hash join：如果表的每个分区能构建为 hash table。
+  - 否则使用Sort merge join：如果匹配的 join key 是能排序的
+
+- 非等值
+  - BroadcastNestedLoopJoin：如果某一边的表能被 broadcast
+  - CartesianProduct：用于 Inner Join
+  - BroadcastNestedLoopJoin：可能会 OOM，但没其他选择了。
 
 ## shuffle hash join/ sort merge Join
 >Shuffle Hash Join的基本步骤主要有以下两点：
@@ -582,6 +625,9 @@ Spark支持三种Join实现方式：shuffle hash join、broad hash join、sort m
 - Merge Phase: 对来自不同表的排序好的分区数据进行JOIN，通过遍历元素，连接具有相同Join key值的行来合并数据集
 
 可以看出，无论分区有多大，Sort Merge Join都不用把某一侧的数据全部加载到内存中，而是即用即取即丢，从而大大提升了大数据量下sql join的稳定性。
+
+
+https://qileq.com/tech/spark/sql/join/
 # Spark算子类型
 从大方向来说，Spark 算子大致可以分为以下两类:transform 算子，action算子。
 
@@ -670,13 +716,19 @@ Spark作业看起来会运行得非常缓慢，甚至可能因为某个task处�
 
 在进行shuffle的时候，必须将各个节点上相同的key拉取到某个节点上的一个task来进行处理。比如按照key进行聚合或join等操作。此时如果某个key对应的数据量特别大的话，就会发生数据倾斜。比如大部分key对应10条数据，但是个别key却对应了100万条数据，那么大部分task可能就只会分配到10条数据，然后1秒钟就运行完了；但是个别task可能分配到了100万数据，要运行一两个小时。因此，整个Spark作业的运行进度是由运行时间最长的那个task决定的。
 
+
+>定位问题的方法
+
+通过4040端口的webUI去查看哪个阶段卡了，是哪一哥算子发生了问题。
 ### 优化方案——数据倾斜 / join调优
 1. 预处理数据：在spark之前处理数据。保证spark运行效率。
 2. 过滤少数倾斜Key：某些key异常的数据较多。可以动态判定哪些key的数据量最多然后再进行过滤，那么可以使用sample算子对RDD进行采样，然后计算出每个key的数量，取数据量最多的key过滤掉即可。
 3. 提高shuffle并行度：`spark.sql.shuffle.partitions`代表了shuffle read task的并行度，默认是200比较小。增加shuffle read task的数量，可以让原本分配给一个task的多个key分配给多个task，从而让每个task处理比原来更少的数据。（方案对于某个key倾斜不适用，因为这个key还是被打到了某一个task）
-4. Join使用broadcast/reduce类使用随机前缀打散key：对于join改成broadcast实际上是避免了shuffle。reduce方法实际上是降低了某一个key的数据量。
-5. 两个表都很大的join，可以打散+聚合。
+4. Join使用broadcast/reduce类使用随机前缀打散key：对于join改成broadcast实际上是避免了shuffle。reduce方法实际上是降低了某一个key的数据量。用map方法替代了reduce方法。
+5. 两个表都很大的join，可以打散+聚合。 
 
+
+核心思想就是把key分配到不同分区执行。
 
 
 ## shuffle调优
@@ -715,11 +767,11 @@ SortShuffleManager由于有一个磁盘文件merge的过程，因此大大减少
 
 ![在这里插入图片描述](https://img-blog.csdnimg.cn/573e37543a0b4a989828fbf0da45ff85.png)
 
-> bypass 
+> bypass：不会对数据真的排序 
 
 bypass运行机制的触发条件如下： 
 * shuffle map task数量小于spark.shuffle.sort.bypassMergeThreshold参数的值。 
-* 不是聚合类的shuffle算子（比如reduceByKey）。
+* 不是聚合类的shuffle算子（比如reduceByKey就是聚合类的算子）。
 
 此时task会为每个下游task都创建一个临时磁盘文件，并将数据按**将key写入对应的磁盘文件之中**。当然，写入磁盘文件时也是先写入内存缓冲，缓冲写满之后再溢写到磁盘文件的。最后，同样会将所有临时磁盘文件都合并成一个磁盘文件，并创建一个单独的索引文件。
 
@@ -742,7 +794,55 @@ AQE 对于整体的 Spark SQL 的执行过程做了相应的调整和优化(如�
   - 自动解决 Join 时的数据倾斜问题：AQE 由于可以实时拿到运行时的数据，通过 Skew Shuffle Reader 自动调整不同 key 的数据大小(spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes) 来避免数据倾斜，从而提高性能。参考示例图可以看到 AQE 自动将 A 表里倾斜的 partition 进一步划分为 3 个小的 partitions 跟 B 表对应的 partition 进行 join，消除短板倾斜任务
   - 优化 Join 策略：AQE 可以在 Join 的初始阶段获悉数据的输入特性，并基于此选择适合的 Join 算法从而最大化地优化性能。比如从 Cost 比较高的 SortMerge 在不超过阈值的情况下调整为代价较小的 Broadcast Join。
 - 动态分区修剪Dynamic Partition Pruning(DPP)：DPP 主要解决的是对于星型模型的查询场景中过滤条件无法下推的情况。通过 DPP 可以将小表过滤后的数据作为新的过滤条件下推到另一个大表里，从而可以做到对大表 scan 运行阶段的提前过滤掉不必要 partition 读取。这样也可以避免引入不必要的额外 ETL 过程（例如预先 ETL 生成新的过滤后的大表），在查询的过程中极大的提升查询性能
+
+# Spark sql
+Spark SQL是Apache Spark中的一个模块，用于处理结构化数据并提供SQL查询的功能。它提供了一种编程接口，可以使用SQL语句或DataFrame/Dataset API来查询和操作数据。
+
+Spark SQL的主要特性包括：
+
+- SQL查询：Spark SQL允许使用标准的SQL语句来查询数据。它支持多种数据源（如Hive、JSON、Parquet、Avro等），并提供了强大的查询优化和执行引擎，以便高效地执行查询操作。
+
+- DataFrame和Dataset API：Spark SQL引入了DataFrame和Dataset API，这是一种面向对象的API，用于以类型安全的方式操作结构化数据。它提供了丰富的操作和转换方法，用于处理数据、进行聚合、过滤和连接等操作。
+
+- 查询优化和执行引擎：Spark SQL具有查询优化器和执行引擎，它可以对查询进行优化，包括谓词下推、列剪裁、表达式重写等技术，以提高查询性能和效率。
+- 集成Hive和现有系统：如果已经使用Hive作为数据仓库或有现有的Hive表结构，那么使用Spark SQL能够无缝集成Hive，直接读取和写入Hive表，并共享Hive的元数据、UDFs等。
+
+对于结构化数据，并且主要做数据转换、过滤、聚合等操作，那么使用Spark SQL更简洁。Spark SQL提供了DataFrame和Dataset API，使得结构化数据处理更易于编写和维护。
+
+## 执行流程
+spark sql的架构如图。SQL语句，经过一个优化器（Catalyst），转化为RDD，交给集群执行
+![在这里插入图片描述](https://img-blog.csdnimg.cn/96841cb727384e6b9e3bf7132aa02d7b.png)
+
+其中核心是 Catalyst优化器。sql语句的本质就是，解析（Parser）、优化（Optimizer）、执行（Execution）。
+
+1. Parser阶段：将SQL语句解析成一颗语法树。使用第三方类库ANTLR进行实现。的（包括我们熟悉的Hive、Presto、SparkSQL等都是由ANTLR实现的）。在这个过程中，会判断SQL语句是否符合规范。不会对表名，表字段进行检查。
+2. Analyzer阶段：生成逻辑计划。此时元数据信息包括两部分：表的Scheme信息，如列名、数据类型、表的物理位置等，和基本函数信息。此过程就会判断SQL语句的表名，字段名是否真的在元数据库里存在。
+3. Optimizer模块：优化逻辑计划。Optimizer优化模块是整个Catalyst的核心，上面提到优化器分为基于规则的优化（RBO）和基于代价优化（CBO）两种。
+   1. 基于规则的优化策略实际上就是对语法树进行一次遍历，在进行相应的等价转换。
+      - **谓词下推**(先filter再join) 、
+      - **常量累加**(x+(100+80)->x+180) 、
+      - **列值裁剪**(当用到一个表时，不需要扫描它的所有列值，而是扫描只需要的id，不需要的裁剪掉。这一优化一方面大幅度减少了网络、内存数据量消耗，另一方面对于列式存储数据库来说大大提高了扫描效率。) 
+   
+   2. 生成多个可以执行的物理计划Physical Plan；接着CBO（基于代价优化）优化策略会根据Cost Model算出每个Physical Plan的代价，并选取代价最小的 Physical Plan作为最终的Physical Plan。
+   
+https://cloud.tencent.com/developer/article/2008340
 # 其他问题
+## spark的小文件问题
+spark的小文件问题会给分别给读写两端带来问题。对于读来说，处理一大堆小文件的读入会导致每个rdd的partition数量太多。由于每个rdd的partition对应一个task，因此会产生太多的task，从而增加了网络通信和任务调度的开销。一般在读入数据以后，我们可以repartition为min(task_num, 200).
+
+对于写来说，推荐是每个文件的大小为128MB左右。因此我们在最终result 写之前可以使用repartition或coalesce方法将数据重新分区
+### coalease和repartition的区别
+coalesce适用于减小分区数量，这个方法不会引发shuffle，利用已有的partition去尽量减少分区数。repartition创建新的partition并且使用 full shuffle。 
+
+repartition只是coalesce接口中shuffle为true的实现
+
+
+    T表有10G数据  有100个partition 资源也为--executor-memory 2g --executor-cores 2 --num-executors 5。我们想要结果文件只有一个
+    1. 如果用coalesce：sql(select * from T).coalesce(1)
+        5个executor 有4个在空跑，只有1个在真正读取数据执行，这时候效率是极低的。所以coalesce要慎用，而且它还用产出oom问题，这个我们以后再说。
+    2. 如果用repartition：sql(select * from T).repartition(1)
+        这样效率就会高很多，并行5个executor在跑（10个task）,然后shuffle到同一节点，最后写到一个文件中
+
 ## Spark程序执行，有时候默认为什么会产生很多task，怎么修改默认task执行个数？
 
 - 有很多小文件的时候，有多少个输入block就会有多少个task启动
@@ -753,7 +853,8 @@ AQE 对于整体的 Spark SQL 的执行过程做了相应的调整和优化(如�
 3. 相同key都拉取到同一个节点进行聚合操作时，还有可能会因为一个节点上处理的key过多，导致内存不够存放，进而溢写到磁盘文件中。
  
 因此在shuffle过程中，可能会发生大量的**磁盘文件读写的IO操作**，以及**数据的网络传输操作**。磁盘IO和网络数据传输也是shuffle性能较差的主要原因。
-
+## reduceByKey和groupByKey的区别
+reduceByKey是按照key在shuffle之前有预聚合，返回的是RDD[K,V]，groupByKey是按照key进行分组直接shuffle。两者相比reduceByKey性能更好。
 ## spark的序列化问题
 在Spark中，主要有三个地方涉及到了序列化： 
 * 在算子函数中使用到外部变量时，该变量会被序列化后进行网络传输
@@ -781,5 +882,10 @@ Spark是根据shuffle类算子来进行stage的划分。如果我们的代码中
 
 **task的执行速度是跟每个Executor进程的CPU core数量有直接关系的**。一个CPU core同一时间只能执行一个线程。而每个Executor进程上分配到的多个task，都是以**每个task一条线程**的方式，多线程并发运行的。
 
+## 使用spark实现topN
+https://juejin.cn/post/7120786529286357000
 
 
+基础方法：采用groupByKey。按照key对数据进行聚合（groupByKey）。对同组的key的所有value先转换为List，然后进行排序，最后取TopN
+
+优化就是对于每个partition取topK然后再计算。先获取每个分区的TopN，后获取全局TopN
