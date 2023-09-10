@@ -163,7 +163,23 @@ Spark不一定非要跑在hadoop集群，可以在本地，起多个线程的方
 分布式部署集群，资源和任务监控交给yarn管理
 粗粒度资源分配方式，包含cluster和client运行模式
   - cluster 适合生产，driver运行在集群子节点，具有容错功能
-  - client 适合调试，dirver运行在客户端
+  - client 适合调试，driver运行在客户端
+
+具体流程：yarn-client模式下作业执行流程：
+
+1. 客户端生成作业信息提交给ResourceManager(RM)
+2. RM在本地NodeManager启动container并将Application Master(AM)分配给该NodeManager(NM)
+3. NM接收到RM的分配，启动Application Master并初始化作业，此时这个NM就称为Driver
+4. Application向RM申请资源，分配资源同时通知其他NodeManager启动相应的Executor
+5. Executor向本地启动的Application Master注册汇报并完成相应的任务
+
+yarn-cluster模式下作业执行流程：
+
+1. 客户端生成作业信息提交给ResourceManager(RM)
+2. RM在**某一个NodeManager(由Yarn决定)启动container并将Application Master(AM)分配给该NodeManager(NM)**
+3. NM接收到RM的分配，启动Application Master并初始化作业，此时这个NM就称为Driver
+4. Application向RM申请资源，分配资源同时通知其他NodeManager启动相应的Executor
+5. Executor向**NM上的Application Master**注册汇报并完成相应的任务
 
 >Spark On Mesos模式
 
