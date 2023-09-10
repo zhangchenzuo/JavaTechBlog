@@ -2,6 +2,7 @@
   - [二分](#二分)
     - [STL 二分库函数](#stl-二分库函数)
   - [前缀和，后缀和与差分](#前缀和后缀和与差分)
+  - [双指针](#双指针)
   - [dp](#dp)
     - [线性dp（字符串编辑距离）](#线性dp字符串编辑距离)
     - [区间dp（合并石子，最长回文子序列）](#区间dp合并石子最长回文子序列)
@@ -28,6 +29,7 @@
     - [快速幂](#快速幂)
     - [组合数](#组合数)
     - [约瑟夫问题](#约瑟夫问题)
+    - [质数计算](#质数计算)
   - [贪心](#贪心)
   - [拓扑排序（图论）](#拓扑排序图论)
   - [滑动窗口](#滑动窗口)
@@ -52,6 +54,9 @@
 - [C++ 头文件](#c-头文件)
   - [位运算](#位运算)
 - [c++ api](#c-api)
+- [概率问题](#概率问题)
+  - [次序统计量](#次序统计量)
+  - [贝叶斯公式](#贝叶斯公式)
 # 算法思想
 ## 二分
 二分思想比较场景，模板就不写了。分析一下二分的场景。
@@ -163,6 +168,10 @@ public:
 
 差分的主要思路是**利用差分统计区间的覆盖频次问题**。维护了一个差分数组，对于每次的覆盖区间，**区间头位置+1，区间结尾+1的位置-1**。最后在进行累加，这样数组每个位置就对应了相应位置的频次。
 
+子数组同时加上/减去一个数，非常适合用差分数组来维护。
+
+差分数组d：对于nums[i]到nums[i+k-1]这个k长区间的变化，d[i]+1, d[i+k]-1;  实际值：sum_d对差分数组进行累加即可。                                                                                                                                                                                                                                                                                                                                                                 
+
 [1893. 检查是否区域内所有整数都被覆盖](https://leetcode-cn.com/problems/check-if-all-the-integers-in-a-range-are-covered/)
 ```cpp
 //ranges = [[1,2],[3,4],[5,6]], left = 2, right = 5
@@ -210,6 +219,10 @@ bool isCovered(vector<vector<int>>& ranges, int left, int right) {
         return ans;
     }
 ```
+## 双指针
+典型题目 [接雨水](https://leetcode.cn/problems/trapping-rain-water/), [盛最多水的容器](https://leetcode.cn/problems/container-with-most-water/)
+
+利用双指针，找到这类接水问题的最短的位置，然后作为当前的高度。
 ## dp
 ### 线性dp（字符串编辑距离）
 
@@ -1032,6 +1045,66 @@ public class Main{
     }
 ```
 
+### 质数计算
+线性筛法：O($\sqrt{n}$)
+```c++
+// 判断一个数字是不是质数
+    bool isPrime(int x) {
+        for (int i = 2; i * i <= x; ++i) {
+            if (x % i == 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+```
+
+埃氏筛：O($n\log\log n$)
+```c++
+// 得到1，n的全部质数
+class Solution {
+public:
+    void countPrimes(int n) {
+        vector<int> isPrime(n, 1);
+        for (int i = 2; i < n; ++i) {
+            if (isPrime[i]) {
+                if ((long long)i * i < n) {
+                    for (int j = i * i; j < n; j += i) {
+                        isPrime[j] = 0;
+                    }
+                }
+            }
+        }
+    }
+};
+```
+
+线性筛：O(n)
+```c++
+// 这保证了每个合数只会被其「最小的质因数」筛去，即每个合数被标记一次。
+class Solution {
+public:
+    int countPrimes(int n) {
+        vector<int> primes;
+        vector<int> isPrime(n, 1);
+        for (int i = 2; i < n; ++i) {
+            if (isPrime[i]) {
+                primes.push_back(i);
+            }
+            for (int j = 0; j < primes.size() && i * primes[j] < n; ++j) {
+                isPrime[i * primes[j]] = 0;
+                if (i % primes[j] == 0) {
+                    break;
+                }
+            }
+        }
+        return primes.size();
+    }
+};
+
+```
+
+互质判断：`gcd(x,y) == 1`
 ## 贪心
 世上贪心绝无相同，非常靠经验。
 
@@ -1488,7 +1561,7 @@ int main(){
 
 另外会有类似的，分组背包->其实就是多重背包，二维背包->其实就是额外多了一个可以倒序遍历的维度。
 
-在进一步是求解背包的方案数问题，最简单的方案数问题，与权值无关。**求醉最优方案的方案数**我们需要额外的维护dp数组和方案数数组，我们需要知道当前的最优方案是如何转换得到的，并且进行加和得到最优解的方案数。
+在进一步是求解背包的方案数问题，最简单的方案数问题，与权值无关。**求最优方案的方案数**我们需要额外的维护dp数组和方案数数组，我们需要知道当前的最优方案是如何转换得到的，并且进行加和得到最优解的方案数。
 
 有依赖的树型背包问题，需要使用dfs，首先完善出来子树的dp情况，在计算根节点的最优。自下而上的01背背包。
 
@@ -1704,7 +1777,14 @@ priority_queue<int, vector<int>, greater<int>> pq; // 得到的是小顶堆，to
 // sort函数是相反的，得到的是小的在前。
 sort(sql.begin(), sql.end(), cmp);
 
+//
+struct cmp{
+    bool operator()(const ListNode* a,const ListNode* b){
+        return a->val>b->val;
+    }
+};
 
+priority_queue<ListNode*,vector<ListNode*>,cmp> pq;
 
 ```
 ## 最大公约数
@@ -1763,3 +1843,14 @@ sortnums.insert(sortnums.end (), b.begin()+j, b.end()); // 在sortnums后面添�
 // insert element in vector
 heights.insert(heights.begin(), 0);
 ```
+
+# 概率问题
+## 次序统计量
+
+均匀分布：在 $X~U(a, b)$ 有n个样本，按照递增排序。
+- 均匀分布的期望: $E(X_{(1)}) = a+\frac{b-a}{n+1}$ ， $E(X_{(n)}) = b-\frac{b-a}{n+1}$
+- 方差符合贝塔分布 $X(i) ~ Be(i, n-i+1)$
+- 任意分布 $f_k(x) = \frac{n!}{(k-1)!(n-k)!}(F(x))^{(k-1)}(1-F(x))^{(n-k)}f(x)$
+
+## 贝叶斯公式
+$P(Y|X) = \frac{P(X|Y)*P(Y)}{P(X)} = \frac{P(X|Y)*P(Y)}{P(X|Y)*P(Y) + P(X|Y')P(Y')}$
